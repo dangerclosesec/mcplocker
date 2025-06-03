@@ -1,0 +1,10 @@
+{
+  "globalShortcut": "Alt+C",
+  "mcpServers": {
+    "mcp_locker": {
+      "command": "mcplocker",
+      "args": [
+      ]
+    }
+  }
+}
