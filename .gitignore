@@ -1,2 +1,6 @@
 bin/*
 .secrets/
+authserver
+cli
+test.html
+*.json

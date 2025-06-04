@@ -1,0 +1,95 @@
+{{define "content"}}
+<div class="px-4 py-6 sm:px-0">
+    <div class="text-center mb-8">
+        <i class="fas fa-tachometer-alt text-6xl text-gray-400 mb-4"></i>
+        <h1 class="text-3xl font-bold text-gray-900 mb-2">Welcome to MCPLocker</h1>
+        <p class="text-xl text-gray-600 mb-8">Secure MCP Proxy Dashboard</p>
+    </div>
+
+    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <!-- Services Card -->
+        <div class="bg-white overflow-hidden shadow rounded-lg">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-cogs text-2xl text-blue-600"></i>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 truncate">
+                                Connected Services
+                            </dt>
+                            <dd class="text-lg font-medium text-gray-900">
+                                {{.ConnectedServices}} Active
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-gray-50 px-5 py-3">
+                <div class="text-sm">
+                    <a href="/services" class="font-medium text-blue-600 hover:text-blue-500">
+                        Manage services
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- API Tokens Card -->
+        <div class="bg-white overflow-hidden shadow rounded-lg">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-key text-2xl text-green-600"></i>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 truncate">
+                                API Tokens
+                            </dt>
+                            <dd class="text-lg font-medium text-gray-900">
+                                {{.ActiveTokens}} Active
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-gray-50 px-5 py-3">
+                <div class="text-sm">
+                    <a href="/tokens" class="font-medium text-green-600 hover:text-green-500">
+                        Manage tokens
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Security Card -->
+        <div class="bg-white overflow-hidden shadow rounded-lg">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-shield-alt text-2xl text-purple-600"></i>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 truncate">
+                                Security Status
+                            </dt>
+                            <dd class="text-lg font-medium text-gray-900">
+                                Secure
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-gray-50 px-5 py-3">
+                <div class="text-sm">
+                    <span class="font-medium text-purple-600">
+                        All credentials secured
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

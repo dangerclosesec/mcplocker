@@ -1,0 +1,139 @@
+{{define "content"}}
+<div class="px-4 py-6 sm:px-0">
+    <div class="border-b border-gray-200 pb-4 mb-6">
+        <h1 class="text-2xl font-bold text-gray-900">Connected Services</h1>
+        <p class="mt-2 text-sm text-gray-600">
+            Connect and configure external services for use with your MCP tools.
+        </p>
+    </div>
+
+    {{if .ErrorMessage}}
+    <!-- Error Message -->
+    <div class="mb-6 rounded-md bg-red-50 p-4">
+        <div class="flex">
+            <div class="flex-shrink-0">
+                <i class="fas fa-exclamation-circle text-red-400"></i>
+            </div>
+            <div class="ml-3">
+                <h3 class="text-sm font-medium text-red-800">
+                    Authorization Error
+                </h3>
+                <div class="mt-2 text-sm text-red-700">
+                    <p>{{.ErrorMessage}}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    {{end}}
+
+    <!-- Google Services Section -->
+    <div class="mb-8">
+        <h2 class="text-lg font-medium text-gray-900 mb-4 flex items-center">
+            <i class="fab fa-google text-red-500 mr-2"></i>
+            Google Services
+        </h2>
+        
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {{template "service-card" dict "Service" "Gmail" "Icon" "fas fa-envelope" "Color" "red" "Description" "Send and read emails through the Gmail API" "Connected" .Services.Gmail.Connected "Email" .Services.Gmail.Email "AuthPath" "/auth/service/gmail"}}
+            
+            {{template "service-card" dict "Service" "Google Calendar" "Icon" "fas fa-calendar" "Color" "blue" "Description" "Create, view, and manage calendar events" "Connected" .Services.Calendar.Connected "Email" .Services.Calendar.Email "AuthPath" "/auth/service/calendar"}}
+            
+            {{template "service-card" dict "Service" "Google Drive" "Icon" "fab fa-google-drive" "Color" "green" "Description" "Access, create, and manage files in Google Drive" "Connected" .Services.Drive.Connected "Email" .Services.Drive.Email "AuthPath" "/auth/service/drive"}}
+        </div>
+    </div>
+
+    <!-- Slack Services Section (Coming Soon) -->
+    <div class="mb-8">
+        <h2 class="text-lg font-medium text-gray-900 mb-4 flex items-center">
+            <i class="fab fa-slack text-purple-500 mr-2"></i>
+            Slack Services
+            <span class="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                Coming Soon
+            </span>
+        </h2>
+        
+        <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <p class="text-sm text-gray-600">
+                Slack integration is coming soon. You'll be able to send messages, manage channels, and more.
+            </p>
+        </div>
+    </div>
+</div>
+
+<script>
+function disconnectService(service) {
+    if (confirm(`Are you sure you want to disconnect ${service}? This will remove all stored credentials.`)) {
+        fetch(`/api/services/${service}/disconnect`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => {
+            if (response.ok) {
+                location.reload();
+            } else {
+                alert('Failed to disconnect service');
+            }
+        })
+        .catch(error => {
+            alert('Error disconnecting service');
+        });
+    }
+}
+
+function reconfigureService(service) {
+    window.location.href = `/auth/service/${service}`;
+}
+</script>
+{{end}}
+
+{{define "service-card"}}
+<div class="bg-white overflow-hidden shadow rounded-lg border border-gray-200">
+    <div class="p-5">
+        <div class="flex items-center">
+            <div class="flex-shrink-0">
+                <i class="{{.Icon}} text-{{.Color}}-500 text-2xl"></i>
+            </div>
+            <div class="ml-5 w-0 flex-1">
+                <dl>
+                    <dt class="text-sm font-medium text-gray-500 truncate">{{.Service}}</dt>
+                    <dd class="text-lg font-medium text-gray-900">
+                        {{if .Connected}}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                Connected
+                            </span>
+                            {{if .Email}}
+                                <br><span class="text-xs text-gray-500 mt-1">{{.Email}}</span>
+                            {{end}}
+                        {{else}}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                Not Connected
+                            </span>
+                        {{end}}
+                    </dd>
+                </dl>
+            </div>
+        </div>
+        <div class="mt-4">
+            <p class="text-sm text-gray-500 mb-3">
+                {{.Description}}
+            </p>
+            {{if .Connected}}
+                <div class="flex space-x-2">
+                    <button onclick="disconnectService('{{.Service | lower}}')" class="inline-flex items-center px-3 py-2 border border-red-300 shadow-sm text-sm leading-4 font-medium rounded-md text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                        Disconnect
+                    </button>
+                    <button onclick="reconfigureService('{{.Service | lower}}')" class="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                        Reconfigure
+                    </button>
+                </div>
+            {{else}}
+                <a href="{{.AuthPath}}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-{{.Color}}-600 hover:bg-{{.Color}}-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-{{.Color}}-500">
+                    Configure
+                </a>
+            {{end}}
+        </div>
+    </div>
+</div>
+{{end}}

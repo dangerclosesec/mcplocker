@@ -1,0 +1,189 @@
+{{define "content"}}
+<div class="px-4 py-6 sm:px-0">
+    <!-- Header -->
+    <div class="md:flex md:items-center md:justify-between mb-8">
+        <div class="flex-1 min-w-0">
+            <h2 class="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">
+                API Tokens
+            </h2>
+            <p class="mt-1 text-sm text-gray-500">
+                Manage tokens for CLI access to your MCPLocker services.
+            </p>
+        </div>
+        <div class="mt-4 flex md:mt-0 md:ml-4">
+            <button type="button" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                <i class="fas fa-plus mr-2"></i>
+                Generate New Token
+            </button>
+        </div>
+    </div>
+
+    <!-- Token List -->
+    <div class="bg-white shadow overflow-hidden sm:rounded-md">
+        <ul class="divide-y divide-gray-200">
+            <li class="px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-laptop text-2xl text-blue-600"></i>
+                        </div>
+                        <div class="ml-4">
+                            <div class="flex items-center">
+                                <p class="text-sm font-medium text-gray-900">macOS Development Token</p>
+                                <span class="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    Active
+                                </span>
+                            </div>
+                            <div class="mt-1 flex items-center space-x-4">
+                                <p class="text-sm text-gray-500">Created: Dec 15, 2024</p>
+                                <p class="text-sm text-gray-500">Last used: 2 hours ago</p>
+                                <p class="text-sm text-gray-500">Expires: Never</p>
+                            </div>
+                            <div class="mt-2">
+                                <code class="text-xs bg-gray-100 px-2 py-1 rounded font-mono">mcp_dev_abc123...def789</code>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button type="button" class="text-gray-400 hover:text-gray-600">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                        <button type="button" class="text-gray-400 hover:text-gray-600">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button type="button" class="text-red-400 hover:text-red-600">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            </li>
+            
+            <li class="px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-server text-2xl text-green-600"></i>
+                        </div>
+                        <div class="ml-4">
+                            <div class="flex items-center">
+                                <p class="text-sm font-medium text-gray-900">Production Server Token</p>
+                                <span class="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    Active
+                                </span>
+                            </div>
+                            <div class="mt-1 flex items-center space-x-4">
+                                <p class="text-sm text-gray-500">Created: Dec 10, 2024</p>
+                                <p class="text-sm text-gray-500">Last used: 1 day ago</p>
+                                <p class="text-sm text-gray-500">Expires: Mar 10, 2025</p>
+                            </div>
+                            <div class="mt-2">
+                                <code class="text-xs bg-gray-100 px-2 py-1 rounded font-mono">mcp_prod_xyz789...abc123</code>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button type="button" class="text-gray-400 hover:text-gray-600">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                        <button type="button" class="text-gray-400 hover:text-gray-600">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button type="button" class="text-red-400 hover:text-red-600">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            </li>
+
+            <li class="px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-mobile-alt text-2xl text-gray-400"></i>
+                        </div>
+                        <div class="ml-4">
+                            <div class="flex items-center">
+                                <p class="text-sm font-medium text-gray-900">Mobile Testing Token</p>
+                                <span class="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                    Revoked
+                                </span>
+                            </div>
+                            <div class="mt-1 flex items-center space-x-4">
+                                <p class="text-sm text-gray-500">Created: Dec 5, 2024</p>
+                                <p class="text-sm text-gray-500">Revoked: Dec 12, 2024</p>
+                            </div>
+                            <div class="mt-2">
+                                <code class="text-xs bg-gray-100 px-2 py-1 rounded font-mono">mcp_mobile_***revoked***</code>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button type="button" class="text-red-400 hover:text-red-600">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            </li>
+        </ul>
+    </div>
+
+    <!-- CLI Setup Instructions -->
+    <div class="mt-8">
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-6">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <i class="fas fa-info-circle text-blue-600 text-xl"></i>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-blue-800">CLI Setup Instructions</h3>
+                    <div class="mt-2 text-sm text-blue-700">
+                        <p class="mb-3">To configure your MCPLocker CLI with a token:</p>
+                        <ol class="list-decimal list-inside space-y-1 ml-4">
+                            <li>Copy one of your active tokens above</li>
+                            <li>Run <code class="bg-blue-100 px-1 rounded">mcplocker config set-token &lt;your-token&gt;</code></li>
+                            <li>Verify connection with <code class="bg-blue-100 px-1 rounded">mcplocker status</code></li>
+                        </ol>
+                        <p class="mt-3">Your token will be stored securely in <code class="bg-blue-100 px-1 rounded">~/.config/mcplocker/mcp.conf</code></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Token Permissions -->
+    <div class="mt-8">
+        <div class="bg-white shadow overflow-hidden sm:rounded-lg">
+            <div class="px-4 py-5 sm:px-6">
+                <h3 class="text-lg leading-6 font-medium text-gray-900">Token Permissions</h3>
+                <p class="mt-1 max-w-2xl text-sm text-gray-500">What your API tokens can access</p>
+            </div>
+            <div class="border-t border-gray-200">
+                <div class="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Service Access</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                        All authenticated services (Google, Slack, etc.)
+                    </dd>
+                </div>
+                <div class="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Tool Execution</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                        Can execute all enabled MCP tools on your behalf
+                    </dd>
+                </div>
+                <div class="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Rate Limits</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                        1000 requests per hour per token
+                    </dd>
+                </div>
+                <div class="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Audit Logging</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                        All token usage is logged and auditable
+                    </dd>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
