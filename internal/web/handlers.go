@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/dangerclosesec/mcplocker/internal/config"
@@ -36,6 +37,7 @@ type WebHandlers struct {
 	oauth         *OAuthConfig
 	sessions      map[string]*User               // Simple in-memory session store - use Redis in production
 	serviceTokens map[string]*ServiceConnection // Service-specific connections keyed by "userID:service"
+	tokenManager  *TokenManager                 // API token manager
 }
 
 // NewWebHandlers creates a new instance of web handlers
@@ -65,13 +67,35 @@ func NewWebHandlers() *WebHandlers {
 		Endpoint: google.Endpoint,
 	}
 
-	return &WebHandlers{
+	// Initialize token manager
+	tokenManager, err := NewTokenManager()
+	if err != nil {
+		log.Printf("Failed to initialize token manager: %v", err)
+		// Return handlers with nil token manager - token features will be disabled
+		return &WebHandlers{
+			oauth: &OAuthConfig{
+				Google: googleConfig,
+			},
+			sessions:      make(map[string]*User),
+			serviceTokens: make(map[string]*ServiceConnection),
+		}
+	}
+
+	handlers := &WebHandlers{
 		oauth: &OAuthConfig{
 			Google: googleConfig,
 		},
 		sessions:      make(map[string]*User),
 		serviceTokens: make(map[string]*ServiceConnection),
+		tokenManager:  tokenManager,
 	}
+	
+	// Load existing service tokens from persistent storage
+	if err := handlers.LoadServiceTokens(); err != nil {
+		log.Printf("Warning: Failed to load service tokens: %v", err)
+	}
+	
+	return handlers
 }
 
 // generateSessionToken generates a secure random session token
@@ -134,6 +158,18 @@ func (h *WebHandlers) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 		}
 		next(w, r)
 	}
+}
+
+// requireAuthMiddleware creates a middleware compatible with chi.Router.Use
+func (h *WebHandlers) requireAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user := h.getUser(r)
+		if user == nil {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // HandleHome serves the home page (redirects to dashboard if authenticated)
@@ -243,6 +279,14 @@ func (h *WebHandlers) HandleServices(w http.ResponseWriter, r *http.Request) {
 			Connected bool
 			Email     string
 		}
+		GitHubRepos struct {
+			Connected bool
+			Username  string
+		}
+		GitHubIssues struct {
+			Connected bool
+			Username  string
+		}
 		ErrorMessage string
 	}{}
 	
@@ -261,6 +305,13 @@ func (h *WebHandlers) HandleServices(w http.ResponseWriter, r *http.Request) {
 		
 		servicesData.Drive.Connected = h.isServiceConnected(user.ID, "drive")
 		servicesData.Drive.Email = h.getServiceEmail(user.ID, "drive")
+		
+		// Check GitHub services using the new key format
+		servicesData.GitHubRepos.Connected = h.isServiceConnected(user.ID, "github:repos")
+		servicesData.GitHubRepos.Username = h.getServiceEmail(user.ID, "github:repos")
+		
+		servicesData.GitHubIssues.Connected = h.isServiceConnected(user.ID, "github:issues")
+		servicesData.GitHubIssues.Username = h.getServiceEmail(user.ID, "github:issues")
 	}
 	
 	data := struct {
@@ -277,6 +328,14 @@ func (h *WebHandlers) HandleServices(w http.ResponseWriter, r *http.Request) {
 			Drive struct {
 				Connected bool
 				Email     string
+			}
+			GitHubRepos struct {
+				Connected bool
+				Username  string
+			}
+			GitHubIssues struct {
+				Connected bool
+				Username  string
 			}
 		}
 		ErrorMessage string
@@ -298,10 +357,20 @@ func (h *WebHandlers) HandleServices(w http.ResponseWriter, r *http.Request) {
 				Connected bool
 				Email     string
 			}
+			GitHubRepos struct {
+				Connected bool
+				Username  string
+			}
+			GitHubIssues struct {
+				Connected bool
+				Username  string
+			}
 		}{
-			Gmail:    servicesData.Gmail,
-			Calendar: servicesData.Calendar,
-			Drive:    servicesData.Drive,
+			Gmail:        servicesData.Gmail,
+			Calendar:     servicesData.Calendar,
+			Drive:        servicesData.Drive,
+			GitHubRepos:  servicesData.GitHubRepos,
+			GitHubIssues: servicesData.GitHubIssues,
 		},
 		ErrorMessage: servicesData.ErrorMessage,
 	}
@@ -313,9 +382,21 @@ func (h *WebHandlers) HandleServices(w http.ResponseWriter, r *http.Request) {
 func (h *WebHandlers) HandleTokens(w http.ResponseWriter, r *http.Request) {
 	user := h.getUser(r)
 	
-	data := PageData{
-		Title: "API Tokens",
-		User:  user,
+	// Get user's tokens
+	var tokens []*APIToken
+	if h.tokenManager != nil && user != nil {
+		tokens = h.tokenManager.GetUserTokens(user.ID)
+	}
+	
+	data := struct {
+		PageData
+		Tokens []*APIToken
+	}{
+		PageData: PageData{
+			Title: "API Tokens",
+			User:  user,
+		},
+		Tokens: tokens,
 	}
 	
 	RenderTemplate(w, "tokens.html", data)
@@ -471,6 +552,16 @@ func (h *WebHandlers) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 			Token:     token,
 			UserEmail: googleEmail,
 			UserID:    user.ID,
+		}
+		
+		// Save tokens to persistent storage
+		if err := h.SaveServiceTokens(); err != nil {
+			log.Printf("Warning: Failed to save service tokens: %v", err)
+		}
+		
+		// Notify about tool changes
+		if GlobalToolChangeNotifier != nil {
+			GlobalToolChangeNotifier.NotifyToolChange(user.ID)
 		}
 		
 		log.Printf("Stored %s token for user %s (Google account: %s)", service, user.Email, googleEmail)
@@ -640,10 +731,331 @@ func (h *WebHandlers) RegisterRoutes(r chi.Router) {
 	r.Get("/auth/service/calendar", h.HandleServiceAuth("calendar"))
 	r.Get("/auth/service/drive", h.HandleServiceAuth("drive"))
 	
+	// GitHub OAuth routes
+	r.Get("/auth/service/github/repos", h.HandleGitHubServiceAuth("repos"))
+	r.Get("/auth/service/github/issues", h.HandleGitHubServiceAuth("issues"))
+	r.Get("/api/auth/callback/github", h.HandleGitHubCallback)
+	
 	// Protected routes
 	r.Group(func(r chi.Router) {
 		r.Get("/dashboard", h.requireAuth(h.HandleDashboard))
 		r.Get("/services", h.requireAuth(h.HandleServices))
 		r.Get("/tokens", h.requireAuth(h.HandleTokens))
 	})
+
+	// API routes for token management
+	r.Route("/api/tokens", func(r chi.Router) {
+		r.Use(h.requireAuthMiddleware) // Require web session authentication
+		r.Post("/", h.HandleCreateToken)
+		r.Delete("/{tokenId}", h.HandleRevokeToken)
+	})
+}
+
+// HandleGitHubServiceAuth creates a GitHub service-specific OAuth handler
+func (h *WebHandlers) HandleGitHubServiceAuth(service string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Check if GitHub OAuth is configured via environment variables
+		clientID := os.Getenv("GITHUB_CLIENT_ID")
+		clientSecret := os.Getenv("GITHUB_CLIENT_SECRET")
+		
+		if clientID == "" || clientSecret == "" {
+			http.Error(w, "GitHub OAuth not configured. Please set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET environment variables.", http.StatusInternalServerError)
+			return
+		}
+
+		// Define scopes based on the service
+		var scopes []string
+		switch service {
+		case "repos":
+			scopes = []string{
+				"repo",       // Full control of private repositories
+				"read:user",  // Read user profile data
+			}
+		case "issues":
+			scopes = []string{
+				"repo",       // Access to repository issues
+				"read:user",  // Read user profile data
+			}
+		default:
+			http.Error(w, "Unsupported GitHub service", http.StatusBadRequest)
+			return
+		}
+
+		// Create GitHub OAuth config
+		githubOAuthConfig := &oauth2.Config{
+			ClientID:     clientID,
+			ClientSecret: clientSecret,
+			RedirectURL:  "http://localhost:38741/api/auth/callback/github",
+			Scopes:       scopes,
+			Endpoint: oauth2.Endpoint{
+				AuthURL:  "https://github.com/login/oauth/authorize",
+				TokenURL: "https://github.com/login/oauth/access_token",
+			},
+		}
+
+		// Generate state token that includes the service name
+		state := "github:" + service + ":" + generateSessionToken()
+		url := githubOAuthConfig.AuthCodeURL(state)
+		
+		// Store state for validation
+		http.SetCookie(w, &http.Cookie{
+			Name:     "oauth_state",
+			Value:    state,
+			Path:     "/",
+			MaxAge:   300, // 5 minutes
+			HttpOnly: true,
+			Secure:   false, // Set to true in production with HTTPS
+		})
+		
+		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+	}
+}
+
+// HandleGitHubCallback handles GitHub OAuth callback
+func (h *WebHandlers) HandleGitHubCallback(w http.ResponseWriter, r *http.Request) {
+	// Check for OAuth errors
+	if errorParam := r.URL.Query().Get("error"); errorParam != "" {
+		errorDescription := r.URL.Query().Get("error_description")
+		urlState := r.URL.Query().Get("state")
+		
+		// Extract service from state if present (format: "github:service:token")
+		var service string
+		if strings.HasPrefix(urlState, "github:") {
+			parts := strings.SplitN(urlState, ":", 3)
+			if len(parts) >= 2 {
+				service = parts[1]
+			}
+		}
+		
+		log.Printf("GitHub OAuth error for service %s: %s - %s", service, errorParam, errorDescription)
+		
+		// Clear state cookie
+		http.SetCookie(w, &http.Cookie{
+			Name:     "oauth_state",
+			Value:    "",
+			Path:     "/",
+			MaxAge:   -1,
+			HttpOnly: true,
+		})
+		
+		// Handle different error types
+		var message string
+		switch errorParam {
+		case "access_denied":
+			if service != "" {
+				serviceName := strings.ToUpper(service[:1]) + service[1:] // Simple title case
+				message = fmt.Sprintf("GitHub authorization was cancelled. %s service was not connected.", serviceName)
+			} else {
+				message = "GitHub authorization was cancelled."
+			}
+		default:
+			if service != "" {
+				serviceName := strings.ToUpper(service[:1]) + service[1:] // Simple title case
+				message = fmt.Sprintf("GitHub authorization failed for %s service. Please try again.", serviceName)
+			} else {
+				message = "GitHub authorization failed. Please try again."
+			}
+		}
+		
+		// Redirect with error message
+		http.Redirect(w, r, "/services?error="+url.QueryEscape(message), http.StatusSeeOther)
+		return
+	}
+
+	// Get state from URL and cookie
+	urlState := r.URL.Query().Get("state")
+	stateCookie, err := r.Cookie("oauth_state")
+	if err != nil || stateCookie.Value != urlState {
+		http.Error(w, "Invalid state parameter", http.StatusBadRequest)
+		return
+	}
+
+	// Extract service from state (format: "github:service:token")
+	var service string
+	if strings.HasPrefix(urlState, "github:") {
+		parts := strings.SplitN(urlState, ":", 3)
+		if len(parts) >= 2 {
+			service = parts[1]
+		}
+	}
+	
+	if service == "" {
+		http.Error(w, "Invalid state format", http.StatusBadRequest)
+		return
+	}
+	
+	// Clear state cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "oauth_state",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+	})
+
+	// Get current user session to associate token with user
+	user := h.getUser(r)
+	if user == nil {
+		http.Error(w, "User not authenticated", http.StatusUnauthorized)
+		return
+	}
+	
+	// Check if GitHub OAuth is configured
+	clientID := os.Getenv("GITHUB_CLIENT_ID")
+	clientSecret := os.Getenv("GITHUB_CLIENT_SECRET")
+	
+	if clientID == "" || clientSecret == "" {
+		http.Error(w, "GitHub OAuth not configured", http.StatusInternalServerError)
+		return
+	}
+
+	// Create GitHub OAuth config
+	githubOAuthConfig := &oauth2.Config{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		RedirectURL:  "http://localhost:38741/api/auth/callback/github",
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  "https://github.com/login/oauth/authorize",
+			TokenURL: "https://github.com/login/oauth/access_token",
+		},
+	}
+	
+	// Exchange authorization code for token
+	code := r.URL.Query().Get("code")
+	token, err := githubOAuthConfig.Exchange(context.Background(), code)
+	if err != nil {
+		http.Error(w, "Failed to exchange token", http.StatusInternalServerError)
+		log.Printf("GitHub token exchange error: %v", err)
+		return
+	}
+
+	// Get GitHub user info to extract username
+	client := githubOAuthConfig.Client(context.Background(), token)
+	resp, err := client.Get("https://api.github.com/user")
+	if err != nil {
+		log.Printf("Failed to get GitHub user info for service %s: %v", service, err)
+		// Still store the connection without username
+	}
+	
+	var githubUsername string
+	if resp != nil {
+		defer resp.Body.Close()
+		var userInfo struct {
+			Login string `json:"login"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&userInfo); err == nil {
+			githubUsername = userInfo.Login
+		}
+	}
+	
+	// Store service connection with new key format
+	tokenKey := user.ID + ":github:" + service
+	h.serviceTokens[tokenKey] = &ServiceConnection{
+		Token:     token,
+		UserEmail: githubUsername, // Using UserEmail field to store GitHub username
+		UserID:    user.ID,
+	}
+	
+	// Save tokens to persistent storage
+	if err := h.SaveServiceTokens(); err != nil {
+		log.Printf("Warning: Failed to save service tokens: %v", err)
+	}
+	
+	// Notify about tool changes
+	if GlobalToolChangeNotifier != nil {
+		GlobalToolChangeNotifier.NotifyToolChange(user.ID)
+	}
+	
+	log.Printf("Stored GitHub %s token for user %s (GitHub account: %s)", service, user.Email, githubUsername)
+	http.Redirect(w, r, "/services", http.StatusSeeOther)
+}
+
+// HandleCreateToken creates a new API token
+func (h *WebHandlers) HandleCreateToken(w http.ResponseWriter, r *http.Request) {
+	user := h.getUser(r)
+	if user == nil {
+		http.Error(w, "User not authenticated", http.StatusUnauthorized)
+		return
+	}
+
+	if h.tokenManager == nil {
+		http.Error(w, "Token management not available", http.StatusInternalServerError)
+		return
+	}
+
+	var req TokenCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate request
+	if req.Name == "" {
+		http.Error(w, "Token name is required", http.StatusBadRequest)
+		return
+	}
+
+	// Set default permissions if none provided
+	if len(req.Permissions) == 0 {
+		req.Permissions = []string{"api:read", "api:write", "tools:execute"}
+	}
+
+	// Create token
+	tokenResp, err := h.tokenManager.CreateToken(user.ID, req)
+	if err != nil {
+		log.Printf("Failed to create token for user %s: %v", user.ID, err)
+		http.Error(w, "Failed to create token", http.StatusInternalServerError)
+		return
+	}
+
+	// Log token creation for audit
+	log.Printf("Created API token %s for user %s (name: %s)", tokenResp.ID, user.Email, req.Name)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(tokenResp)
+}
+
+// HandleRevokeToken revokes an API token
+func (h *WebHandlers) HandleRevokeToken(w http.ResponseWriter, r *http.Request) {
+	user := h.getUser(r)
+	if user == nil {
+		http.Error(w, "User not authenticated", http.StatusUnauthorized)
+		return
+	}
+
+	if h.tokenManager == nil {
+		http.Error(w, "Token management not available", http.StatusInternalServerError)
+		return
+	}
+
+	tokenID := chi.URLParam(r, "tokenId")
+	if tokenID == "" {
+		http.Error(w, "Token ID is required", http.StatusBadRequest)
+		return
+	}
+
+	// Revoke token
+	if err := h.tokenManager.RevokeToken(user.ID, tokenID); err != nil {
+		log.Printf("Failed to revoke token %s for user %s: %v", tokenID, user.ID, err)
+		http.Error(w, "Failed to revoke token", http.StatusInternalServerError)
+		return
+	}
+
+	// Log token revocation for audit
+	log.Printf("Revoked API token %s for user %s", tokenID, user.Email)
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Token revoked successfully",
+	})
+}
+
+// ValidateAPIToken validates an API token and returns the associated user info
+func (h *WebHandlers) ValidateAPIToken(token string) (*APIToken, error) {
+	if h.tokenManager == nil {
+		return nil, fmt.Errorf("token management not available")
+	}
+	
+	return h.tokenManager.ValidateToken(token)
 }

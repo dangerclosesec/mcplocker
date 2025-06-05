@@ -5,12 +5,13 @@
 
 ## Features
 
-- 🔐 **Secure OAuth2 Authentication** - Manage credentials for Google, Slack, and other services
+- 🔐 **Secure OAuth2 Authentication** - Manage credentials for Google, GitHub, and other services
 - 🛡️ **Token-based Authorization** - CLI tools authenticate using secure API tokens
 - 🌐 **Web Dashboard** - Browser-based interface for managing service connections
 - 📅 **Google Calendar Integration** - Create and manage calendar events
 - 📧 **Gmail Integration** - Send and read emails (planned)
 - 💾 **Google Drive Integration** - Manage files and documents (planned)
+- 🐙 **GitHub Integration** - Access repositories, manage issues, and inspect configurations
 - 🔄 **MCP Proxy** - Forward tool calls through authenticated services
 
 ## Quick Start
@@ -19,6 +20,7 @@
 
 - Go 1.24+ installed
 - Google Cloud Console project (for Google services)
+- GitHub account (for GitHub services)
 
 ### 2. Build MCPLocker
 
@@ -68,7 +70,52 @@ go build -o bin/mcplocker ./cmd/cli
    }
    ```
 
-### 4. Start the Auth Server
+### 4. Set up GitHub OAuth2 (Required for GitHub Services)
+
+#### Create OAuth App in GitHub
+
+1. **Go to GitHub Settings**
+   - Visit [GitHub Developer Settings](https://github.com/settings/developers)
+   - Or navigate: Settings > Developer settings > OAuth Apps
+
+2. **Create a New OAuth App**
+   - Click "New OAuth App"
+   - Fill in the application details:
+     - **Application name**: `MCPLocker` (or your preferred name)
+     - **Homepage URL**: `http://localhost:38741` (or your domain)
+     - **Authorization callback URL**: `http://localhost:38741/api/auth/callback/github`
+   - Click "Register application"
+
+3. **Get Client Credentials**
+   - After creating the app, you'll see your **Client ID**
+   - Click "Generate a new client secret" to get your **Client Secret**
+   - **Important**: Copy the client secret immediately as it won't be shown again
+
+4. **Configure MCPLocker Environment Variables**
+   ```bash
+   # Add these to your environment (e.g., .bashrc, .zshrc, or .env file)
+   export GITHUB_CLIENT_ID="your-github-client-id"
+   export GITHUB_CLIENT_SECRET="your-github-client-secret"
+   ```
+
+   Or set them when running the auth server:
+   ```bash
+   GITHUB_CLIENT_ID="your-client-id" GITHUB_CLIENT_SECRET="your-client-secret" ./bin/authserver
+   ```
+
+#### GitHub OAuth Scopes
+
+MCPLocker requests the following scopes based on the service:
+
+- **Repository service** (`repo`, `read:user`):
+  - Full access to private and public repositories
+  - Read user profile data
+  
+- **Issues service** (`repo`, `read:user`):
+  - Access to repository issues
+  - Read user profile data
+
+### 5. Start the Auth Server
 
 ```bash
 ./bin/authserver
@@ -76,7 +123,7 @@ go build -o bin/mcplocker ./cmd/cli
 
 The server will start on `http://localhost:38741`
 
-### 5. Authenticate the CLI
+### 6. Authenticate the CLI
 
 ```bash
 # Set the server URL (if different from default)
@@ -89,16 +136,22 @@ The server will start on `http://localhost:38741`
 ./bin/mcplocker status
 ```
 
-### 6. Connect Google Services
+### 7. Connect Services
 
 1. **Open the web dashboard**: `http://localhost:38741`
 2. **Sign in** with your Google account
 3. **Navigate to Services** and connect:
+
+#### Google Services
    - Google Calendar
    - Gmail (optional)
    - Google Drive (optional)
 
-### 7. Use as MCP Server
+#### GitHub Services
+   - GitHub Repositories - Access repos, view code, manage configurations
+   - GitHub Issues - Create, view, and manage issues
+
+### 8. Use as MCP Server
 
 ```bash
 # Run as MCP server (for use with Claude Desktop or other MCP clients)
@@ -144,6 +197,106 @@ Retrieves calendar events.
 - `time_max` (optional): Upper bound for events (RFC3339 format)
 - `max_results` (optional): Maximum number of events (default: 10)
 - `calendar_id` (optional): Calendar ID (defaults to "primary")
+
+## GitHub Integration
+
+### Available Tools
+
+#### Repository Tools
+
+##### `github_repo_list`
+Lists user's repositories.
+
+**Parameters:**
+- `visibility` (optional): Repository visibility filter (`all`, `public`, `private`)
+- `sort` (optional): Sort order (`created`, `updated`, `pushed`, `full_name`)
+
+**Example:**
+```json
+{
+  "tool": "github_repo_list",
+  "parameters": {
+    "visibility": "all",
+    "sort": "updated"
+  }
+}
+```
+
+##### `github_repo_get`
+Gets details of a specific repository.
+
+**Parameters:**
+- `owner` (required): Repository owner (username or organization)
+- `repo` (required): Repository name
+
+**Example:**
+```json
+{
+  "tool": "github_repo_get",
+  "parameters": {
+    "owner": "octocat",
+    "repo": "Hello-World"
+  }
+}
+```
+
+##### `github_repo_contents`
+Lists contents of a repository directory.
+
+**Parameters:**
+- `owner` (required): Repository owner
+- `repo` (required): Repository name
+- `path` (optional): Directory path (defaults to root)
+
+##### `github_repo_file`
+Gets the content of a specific file.
+
+**Parameters:**
+- `owner` (required): Repository owner
+- `repo` (required): Repository name
+- `path` (required): File path within the repository
+
+##### `github_repo_config`
+Inspects repository configuration files (workflows, package.json, Dockerfile, etc.).
+
+**Parameters:**
+- `owner` (required): Repository owner
+- `repo` (required): Repository name
+
+#### Issue Tools
+
+##### `github_issue_list`
+Lists repository issues.
+
+**Parameters:**
+- `owner` (required): Repository owner
+- `repo` (required): Repository name
+- `state` (optional): Issue state (`open`, `closed`, `all`)
+- `labels` (optional): Comma-separated list of labels to filter by
+
+##### `github_issue_create`
+Creates a new issue in a repository.
+
+**Parameters:**
+- `owner` (required): Repository owner
+- `repo` (required): Repository name
+- `title` (required): Issue title
+- `body` (optional): Issue description/body
+- `labels` (optional): Comma-separated list of labels
+
+**Example:**
+```json
+{
+  "tool": "github_issue_create",
+  "parameters": {
+    "owner": "octocat",
+    "repo": "Hello-World",
+    "title": "Bug: Login not working",
+    "body": "Users are unable to login with their credentials.",
+    "labels": "bug,priority:high"
+  }
+}
+```
 
 ## Configuration
 
@@ -218,6 +371,17 @@ mcplocker config show
 - Check that the Calendar API is enabled in Google Cloud Console
 - Ensure your OAuth token has calendar permissions
 
+#### 5. GitHub Services Not Working
+- Verify your GitHub OAuth app is properly configured
+- Check that `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` environment variables are set
+- Ensure the authorization callback URL matches exactly: `http://localhost:38741/api/auth/callback/github`
+- Verify you've connected the specific GitHub service (repos/issues) in the web dashboard
+
+#### 6. GitHub API Rate Limiting
+- GitHub has rate limits for authenticated requests (5,000 per hour)
+- If you hit rate limits, wait for the reset time or use a GitHub App instead of OAuth
+- Check your rate limit status in the GitHub API response headers
+
 ### Debug Mode
 ```bash
 # Run with debug logging
@@ -252,8 +416,11 @@ mcplocker/
 ├── internal/
 │   ├── auth/          # Auth client
 │   ├── config/        # Configuration management
+│   ├── mcps/          # MCP provider system
+│   │   ├── github/    # GitHub provider
+│   │   └── google/    # Google provider
 │   └── web/           # Web handlers
-└── mcps/
+└── mcps/              # Legacy MCP implementations
     └── google/
         ├── calendar/  # Calendar implementations
         ├── gmail/     # Gmail implementations
