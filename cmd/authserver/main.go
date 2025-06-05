@@ -23,10 +23,12 @@ import (
 	"github.com/dangerclosesec/mcplocker"
 	"github.com/dangerclosesec/mcplocker/internal/auth"
 	"github.com/dangerclosesec/mcplocker/internal/config"
+	"github.com/dangerclosesec/mcplocker/internal/mcps"
+	"github.com/dangerclosesec/mcplocker/internal/mcps/github"
+	google "github.com/dangerclosesec/mcplocker/internal/mcps/google"
+	"github.com/dangerclosesec/mcplocker/internal/security"
 	"github.com/dangerclosesec/mcplocker/internal/web"
 	"golang.org/x/oauth2"
-	"google.golang.org/api/calendar/v3"
-	"google.golang.org/api/option"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -42,6 +44,12 @@ var (
 	apiTokens           = make(map[string]*APIToken)
 	pendingOAuthRequests = make(map[string]*OAuthRequest)
 	storageMutex        = sync.RWMutex{}
+	
+	// MCP manager for handling providers
+	mcpManager *mcps.MCPManager
+	
+	// Tool change tracking
+	toolChangeSignal = make(chan string, 100) // Buffer for user IDs with tool changes
 )
 
 // AuthCode represents an OAuth authorization code
@@ -134,17 +142,59 @@ func main() {
 		loggerOpts...,
 	))
 
+	// Load .env file if it exists
+	if err := config.LoadEnvFile(".env"); err != nil {
+		logger.Warn("Failed to load .env file", "error", err)
+	}
+
 	// Initialize the application
 	logger.Info("Starting MCPLocker Auth Server", "version", mcplocker.VERSION, "debug", debug)
 
+	// Initialize security audit logger
+	if err := security.InitializeAuditLogger(); err != nil {
+		logger.Error("Failed to initialize audit logger", "error", err)
+		os.Exit(1)
+	}
+	logger.Info("Security audit logging initialized")
+
+	// Initialize MCP manager and register providers
+	mcpManager = mcps.NewMCPManager()
+	
+	// Register Google provider
+	googleProvider, err := google.NewGoogleProvider()
+	if err != nil {
+		logger.Error("Failed to initialize Google provider", "error", err)
+		os.Exit(1)
+	}
+	mcpManager.RegisterProvider(googleProvider)
+	
+	// Register GitHub provider (TODO: load from config)
+	githubProvider := github.NewGitHubProvider(
+		os.Getenv("GITHUB_CLIENT_ID"),
+		os.Getenv("GITHUB_CLIENT_SECRET"),
+		"http://localhost:38741/api/auth/callback/github",
+	)
+	mcpManager.RegisterProvider(githubProvider)
+	
+	logger.Info("Registered MCP providers", "providers", []string{"google", "github"})
+
 	r := chi.NewRouter()
 
-	// Add your routes and middleware here
+	// Add security middleware
+	r.Use(security.SecurityHeadersMiddleware)
+	r.Use(security.RequireHTTPS)
+	r.Use(security.AuditMiddleware)
+	
+	// Add standard middleware
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(middleware.Timeout(60 * time.Second))
 
 	// Initialize web handlers
 	webHandlers := web.NewWebHandlers()
+	
+	// Initialize global tool change notifier
+	web.GlobalToolChangeNotifier = web.NewToolChangeNotifier()
 
 	// Web UI routes (public and authenticated pages)
 	webHandlers.RegisterRoutes(r)
@@ -180,15 +230,16 @@ func main() {
 
 		// Proxy endpoints
 		r.Route("/proxy", func(r chi.Router) {
-			r.Use(authMiddleware)
+			r.Use(makeAuthMiddleware(webHandlers))
 			r.Post("/tool", makeProxyToolHandler(webHandlers))
 		})
 
 		// Tool management endpoints
 		r.Route("/tools", func(r chi.Router) {
-			r.Use(authMiddleware)
+			r.Use(makeAuthMiddleware(webHandlers))
 			r.Get("/status", handleToolStatus)
 			r.Get("/available", makeAvailableToolsHandler(webHandlers))
+			r.Get("/changes", handleToolChanges)
 		})
 	})
 
@@ -233,8 +284,9 @@ func main() {
 	logger.Info("Server shutdown completed")
 }
 
-// authMiddleware validates the authentication token (OAuth or API token)
-func authMiddleware(next http.Handler) http.Handler {
+// makeAuthMiddleware creates an auth middleware with access to webHandlers
+func makeAuthMiddleware(webHandlers *web.WebHandlers) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
@@ -253,12 +305,13 @@ func authMiddleware(next http.Handler) http.Handler {
 		storageMutex.RLock()
 		defer storageMutex.RUnlock()
 		
-		// Check OAuth access tokens
+		// Check OAuth access tokens first
 		if accessToken, exists := accessTokens[hashedToken]; exists {
 			if accessToken.ExpiresAt.After(time.Now()) {
 				// Add user context to request
 				ctx := context.WithValue(r.Context(), "userID", accessToken.UserID)
 				ctx = context.WithValue(ctx, "clientID", accessToken.ClientID)
+				ctx = context.WithValue(ctx, "authType", "oauth")
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
@@ -266,7 +319,7 @@ func authMiddleware(next http.Handler) http.Handler {
 			delete(accessTokens, hashedToken)
 		}
 		
-		// Check API tokens
+		// Check legacy API tokens (from authserver storage)
 		for _, apiToken := range apiTokens {
 			if apiToken.Token == hashedToken {
 				if apiToken.ExpiresAt == nil || apiToken.ExpiresAt.After(time.Now()) {
@@ -276,14 +329,28 @@ func authMiddleware(next http.Handler) http.Handler {
 					// Add user context to request
 					ctx := context.WithValue(r.Context(), "userID", apiToken.UserID)
 					ctx = context.WithValue(ctx, "tokenID", apiToken.ID)
+					ctx = context.WithValue(ctx, "authType", "api_token_legacy")
 					next.ServeHTTP(w, r.WithContext(ctx))
 					return
 				}
 			}
 		}
 
+		// Check new API tokens (from web token manager)
+		if webHandlers != nil {
+			if apiToken, err := webHandlers.ValidateAPIToken(token); err == nil && apiToken != nil {
+				// Add user context to request
+				ctx := context.WithValue(r.Context(), "userID", apiToken.UserID)
+				ctx = context.WithValue(ctx, "tokenID", apiToken.ID)
+				ctx = context.WithValue(ctx, "authType", "api_token")
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
+		}
+
 		http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
 	})
+	}
 }
 
 // handleAuthStart initiates the OAuth flow for a provider/service
@@ -455,6 +522,12 @@ func makeProxyToolHandler(webHandlers *web.WebHandlers) http.HandlerFunc {
 
 // handleProxyToolWithWebHandlers proxies tool calls to the appropriate provider
 func handleProxyToolWithWebHandlers(w http.ResponseWriter, r *http.Request, webHandlers *web.WebHandlers) {
+	startTime := time.Now()
+	clientIP := r.RemoteAddr
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		clientIP = strings.Split(forwarded, ",")[0]
+	}
+
 	var req auth.ProxyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		fmt.Printf("DEBUG: Failed to decode proxy request body: %v\n", err)
@@ -468,6 +541,9 @@ func handleProxyToolWithWebHandlers(w http.ResponseWriter, r *http.Request, webH
 	userID, ok := r.Context().Value("userID").(string)
 	if !ok {
 		fmt.Printf("DEBUG: User ID not found in request context\n")
+		if security.GlobalAuditLogger != nil {
+			security.GlobalAuditLogger.LogSecurityViolation("", clientIP, "missing_user_context", "User ID not found in request context")
+		}
 		http.Error(w, "User ID not found in request context", http.StatusUnauthorized)
 		return
 	}
@@ -522,8 +598,18 @@ func handleProxyToolWithWebHandlers(w http.ResponseWriter, r *http.Request, webH
 	// Execute the actual tool call with the user's service credentials
 	fmt.Printf("DEBUG: Executing tool call for %s with parameters: %+v\n", req.ToolName, req.Parameters)
 	result, err := executeToolCall(req.ToolName, req.Parameters, serviceConnection.Token)
+	
+	// Calculate execution duration for audit logging
+	duration := time.Since(startTime)
+	
 	if err != nil {
 		fmt.Printf("DEBUG: Tool execution failed: %v\n", err)
+		
+		// Log failed tool execution
+		if security.GlobalAuditLogger != nil {
+			security.GlobalAuditLogger.LogToolExecution(userID, req.ToolName, service, clientIP, false, err.Error(), duration)
+		}
+		
 		resp := auth.ProxyResponse{
 			Success: false,
 			Error:   fmt.Sprintf("Tool execution failed: %v", err),
@@ -534,6 +620,11 @@ func handleProxyToolWithWebHandlers(w http.ResponseWriter, r *http.Request, webH
 	}
 	
 	fmt.Printf("DEBUG: Tool execution successful, result: %+v\n", result)
+
+	// Log successful tool execution
+	if security.GlobalAuditLogger != nil {
+		security.GlobalAuditLogger.LogToolExecution(userID, req.ToolName, service, clientIP, true, "", duration)
+	}
 
 	resp := auth.ProxyResponse{
 		Success: true,
@@ -1111,6 +1202,12 @@ func getServiceFromToolName(toolName string) string {
 		return "drive"
 	case strings.Contains(toolName, "slack"):
 		return "slack"
+	case strings.Contains(toolName, "github_repo") || (strings.Contains(toolName, "repo") && strings.Contains(toolName, "github")):
+		return "github:repos"
+	case strings.Contains(toolName, "github_issue") || (strings.Contains(toolName, "issue") && strings.Contains(toolName, "github")):
+		return "github:issues"
+	case strings.Contains(toolName, "github"):
+		return "github"
 	default:
 		return ""
 	}
@@ -1121,56 +1218,16 @@ func getServiceFromToolName(toolName string) string {
 func executeToolCall(toolName string, parameters map[string]interface{}, token *oauth2.Token) (interface{}, error) {
 	service := getServiceFromToolName(toolName)
 	
-	switch service {
-	case "gmail":
-		return executeGmailTool(toolName, parameters, token)
-	case "calendar":
-		return executeCalendarTool(toolName, parameters, token)
-	case "drive":
-		return executeDriveTool(toolName, parameters, token)
+	switch {
+	case service == "gmail" || service == "calendar" || service == "drive":
+		return google.ExecuteGoogleTool(toolName, parameters, token)
+	case service == "github" || strings.HasPrefix(service, "github:"):
+		return github.ExecuteGitHubTool(toolName, parameters, token)
 	default:
 		return nil, fmt.Errorf("unsupported service: %s", service)
 	}
 }
 
-// executeGmailTool executes Gmail API calls
-func executeGmailTool(toolName string, parameters map[string]interface{}, token *oauth2.Token) (interface{}, error) {
-	// TODO: Implement actual Gmail API calls
-	// For now, return a mock response with the authenticated user context
-	return map[string]interface{}{
-		"message": fmt.Sprintf("Gmail tool %s executed successfully", toolName),
-		"parameters": parameters,
-		"authenticated": true,
-		"user_email": "user@example.com", // This would come from the token
-	}, nil
-}
-
-// executeCalendarTool executes Google Calendar API calls  
-func executeCalendarTool(toolName string, parameters map[string]interface{}, token *oauth2.Token) (interface{}, error) {
-	fmt.Printf("DEBUG: executeCalendarTool called with tool: %s, parameters: %+v\n", toolName, parameters)
-	fmt.Printf("DEBUG: OAuth token valid: %t, expires: %v\n", token.Valid(), token.Expiry)
-	
-	switch toolName {
-	case "calendar_create_event":
-		return createCalendarEvent(parameters, token)
-	case "calendar_get_events":
-		return getCalendarEvents(parameters, token)
-	default:
-		return nil, fmt.Errorf("unsupported calendar tool: %s", toolName)
-	}
-}
-
-// executeDriveTool executes Google Drive API calls
-func executeDriveTool(toolName string, parameters map[string]interface{}, token *oauth2.Token) (interface{}, error) {
-	// TODO: Implement actual Drive API calls
-	// For now, return a mock response with the authenticated user context
-	return map[string]interface{}{
-		"message": fmt.Sprintf("Drive tool %s executed successfully", toolName),
-		"parameters": parameters,
-		"authenticated": true,
-		"user_email": "user@example.com", // This would come from the token
-	}, nil
-}
 
 // makeAvailableToolsHandler creates a handler that returns available tools based on user's authenticated services
 func makeAvailableToolsHandler(webHandlers *web.WebHandlers) http.HandlerFunc {
@@ -1234,6 +1291,13 @@ func getAvailableToolsForUser(userID string, webHandlers *web.WebHandlers) []con
 					Authenticated: true,
 				})
 				tools = append(tools, config.ToolConfig{
+					Name:          "calendar_update_event",
+					Provider:      "google",
+					Service:       "calendar",
+					Enabled:       true,
+					Authenticated: true,
+				})
+				tools = append(tools, config.ToolConfig{
 					Name:          "calendar_get_events",
 					Provider:      "google",
 					Service:       "calendar",
@@ -1259,193 +1323,110 @@ func getAvailableToolsForUser(userID string, webHandlers *web.WebHandlers) []con
 		}
 	}
 	
+	// Check GitHub services
+	githubServices := []string{"repos", "issues"}
+	for _, service := range githubServices {
+		tokenKey := userID + ":github:" + service
+		if connection, exists := webHandlers.GetServiceConnection(tokenKey); exists && connection.Token != nil && connection.Token.Valid() {
+			// Add tools for this authenticated GitHub service
+			switch service {
+			case "repos":
+				tools = append(tools, config.ToolConfig{
+					Name:          "github_repo_list",
+					Provider:      "github",
+					Service:       "repos",
+					Enabled:       true,
+					Authenticated: true,
+				})
+				tools = append(tools, config.ToolConfig{
+					Name:          "github_repo_get",
+					Provider:      "github",
+					Service:       "repos",
+					Enabled:       true,
+					Authenticated: true,
+				})
+				tools = append(tools, config.ToolConfig{
+					Name:          "github_repo_contents",
+					Provider:      "github",
+					Service:       "repos",
+					Enabled:       true,
+					Authenticated: true,
+				})
+				tools = append(tools, config.ToolConfig{
+					Name:          "github_repo_file",
+					Provider:      "github",
+					Service:       "repos",
+					Enabled:       true,
+					Authenticated: true,
+				})
+				tools = append(tools, config.ToolConfig{
+					Name:          "github_repo_config",
+					Provider:      "github",
+					Service:       "repos",
+					Enabled:       true,
+					Authenticated: true,
+				})
+			case "issues":
+				tools = append(tools, config.ToolConfig{
+					Name:          "github_issue_list",
+					Provider:      "github",
+					Service:       "issues",
+					Enabled:       true,
+					Authenticated: true,
+				})
+				tools = append(tools, config.ToolConfig{
+					Name:          "github_issue_create",
+					Provider:      "github",
+					Service:       "issues",
+					Enabled:       true,
+					Authenticated: true,
+				})
+			}
+		}
+	}
+	
 	fmt.Printf("Returning %d tools for user %s\n", len(tools), userID)
 	return tools
 }
 
-// createCalendarEvent creates a new calendar event using Google Calendar API
-func createCalendarEvent(parameters map[string]interface{}, token *oauth2.Token) (interface{}, error) {
-	ctx := context.Background()
+// handleToolChanges provides a long-polling endpoint for tool changes
+func handleToolChanges(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value("userID").(string)
+	if !ok {
+		http.Error(w, "User ID not found in request context", http.StatusUnauthorized)
+		return
+	}
 	
-	// Create OAuth2 client with the user's token
-	client := oauth2.NewClient(ctx, oauth2.StaticTokenSource(token))
+	// Set headers for Server-Sent Events
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	
-	// Create Calendar service
-	service, err := calendar.NewService(ctx, option.WithHTTPClient(client))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create calendar service: %w", err)
-	}
-
-	// Extract parameters
-	summary, ok := parameters["summary"].(string)
-	if !ok {
-		return nil, fmt.Errorf("summary parameter is required and must be a string")
-	}
-
-	startTime, ok := parameters["start_time"].(string)
-	if !ok {
-		return nil, fmt.Errorf("start_time parameter is required and must be a string")
-	}
-
-	endTime, ok := parameters["end_time"].(string)
-	if !ok {
-		return nil, fmt.Errorf("end_time parameter is required and must be a string")
-	}
-
-	// Parse times
-	startDateTime, err := time.Parse(time.RFC3339, startTime)
-	if err != nil {
-		return nil, fmt.Errorf("invalid start_time format, expected RFC3339: %w", err)
-	}
-
-	endDateTime, err := time.Parse(time.RFC3339, endTime)
-	if err != nil {
-		return nil, fmt.Errorf("invalid end_time format, expected RFC3339: %w", err)
-	}
-
-	// Create the event
-	event := &calendar.Event{
-		Summary: summary,
-		Start: &calendar.EventDateTime{
-			DateTime: startDateTime.Format(time.RFC3339),
-			TimeZone: "UTC",
-		},
-		End: &calendar.EventDateTime{
-			DateTime: endDateTime.Format(time.RFC3339),
-			TimeZone: "UTC",
-		},
-	}
-
-	// Add optional fields
-	if description, ok := parameters["description"].(string); ok && description != "" {
-		event.Description = description
-	}
-
-	if location, ok := parameters["location"].(string); ok && location != "" {
-		event.Location = location
-	}
-
-	// Add attendees if provided
-	if attendeesStr, ok := parameters["attendees"].(string); ok && attendeesStr != "" {
-		attendeeEmails := strings.Split(attendeesStr, ",")
-		var attendees []*calendar.EventAttendee
-		for _, email := range attendeeEmails {
-			email = strings.TrimSpace(email)
-			if email != "" {
-				attendees = append(attendees, &calendar.EventAttendee{
-					Email: email,
-				})
+	// Create a timeout context for this request
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	
+	// Listen for tool changes for this user
+	for {
+		select {
+		case changedUserID := <-toolChangeSignal:
+			if changedUserID == userID {
+				// Tool change detected for this user
+				w.Write([]byte("data: {\"type\": \"tools_changed\"}\n\n"))
+				if flusher, ok := w.(http.Flusher); ok {
+					flusher.Flush()
+				}
+				return
 			}
+		case <-ctx.Done():
+			// Timeout reached, respond with no changes
+			w.Write([]byte("data: {\"type\": \"no_changes\"}\n\n"))
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			return
 		}
-		event.Attendees = attendees
 	}
-
-	// Insert the event (default to primary calendar)
-	calendarID := "primary"
-	if calID, ok := parameters["calendar_id"].(string); ok && calID != "" {
-		calendarID = calID
-	}
-
-	createdEvent, err := service.Events.Insert(calendarID, event).Do()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create calendar event: %w", err)
-	}
-
-	// Return success response
-	result := map[string]interface{}{
-		"success":      true,
-		"message":      "Calendar event created successfully",
-		"event_id":     createdEvent.Id,
-		"event_link":   createdEvent.HtmlLink,
-		"summary":      createdEvent.Summary,
-		"start_time":   createdEvent.Start.DateTime,
-		"end_time":     createdEvent.End.DateTime,
-		"created":      createdEvent.Created,
-		"calendar_id":  calendarID,
-	}
-
-	fmt.Printf("DEBUG: Successfully created calendar event: %s (ID: %s)\n", createdEvent.Summary, createdEvent.Id)
-	return result, nil
 }
 
-// getCalendarEvents retrieves calendar events using Google Calendar API
-func getCalendarEvents(parameters map[string]interface{}, token *oauth2.Token) (interface{}, error) {
-	ctx := context.Background()
-	
-	// Create OAuth2 client with the user's token
-	client := oauth2.NewClient(ctx, oauth2.StaticTokenSource(token))
-	
-	// Create Calendar service
-	service, err := calendar.NewService(ctx, option.WithHTTPClient(client))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create calendar service: %w", err)
-	}
-
-	// Set up query parameters
-	calendarID := "primary"
-	if calID, ok := parameters["calendar_id"].(string); ok && calID != "" {
-		calendarID = calID
-	}
-
-	call := service.Events.List(calendarID)
-
-	// Add optional time bounds
-	if timeMin, ok := parameters["time_min"].(string); ok && timeMin != "" {
-		call = call.TimeMin(timeMin)
-	}
-
-	if timeMax, ok := parameters["time_max"].(string); ok && timeMax != "" {
-		call = call.TimeMax(timeMax)
-	}
-
-	// Set max results
-	maxResults := int64(10)
-	if maxRes, ok := parameters["max_results"].(float64); ok && maxRes > 0 {
-		maxResults = int64(maxRes)
-	}
-	call = call.MaxResults(maxResults)
-
-	// Execute the query
-	events, err := call.Do()
-	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve calendar events: %w", err)
-	}
-
-	// Format the response
-	var eventList []map[string]interface{}
-	for _, event := range events.Items {
-		eventInfo := map[string]interface{}{
-			"id":          event.Id,
-			"summary":     event.Summary,
-			"description": event.Description,
-			"location":    event.Location,
-			"start_time":  event.Start.DateTime,
-			"end_time":    event.End.DateTime,
-			"html_link":   event.HtmlLink,
-			"created":     event.Created,
-			"updated":     event.Updated,
-		}
-
-		// Add attendees if present
-		if len(event.Attendees) > 0 {
-			var attendees []string
-			for _, attendee := range event.Attendees {
-				attendees = append(attendees, attendee.Email)
-			}
-			eventInfo["attendees"] = attendees
-		}
-
-		eventList = append(eventList, eventInfo)
-	}
-
-	result := map[string]interface{}{
-		"success":     true,
-		"message":     "Calendar events retrieved successfully",
-		"events":      eventList,
-		"total_count": len(eventList),
-		"calendar_id": calendarID,
-	}
-
-	fmt.Printf("DEBUG: Retrieved %d calendar events\n", len(eventList))
-	return result, nil
-}

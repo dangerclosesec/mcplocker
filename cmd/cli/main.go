@@ -177,6 +177,7 @@ func runMCPServer(logger sawmill.Logger) {
 	// Start polling for tool updates if authenticated
 	if cfg.HasValidToken() {
 		go startToolPolling(s, authClient, cfg, logger, cancel)
+		go startToolChangeListener(s, authClient, cfg, logger, cancel)
 	}
 
 	// Start the stdio server
@@ -252,6 +253,8 @@ func createToolSchema(toolConfig config.ToolConfig) mcp.Tool {
 	// Calendar tools
 	case strings.Contains(toolConfig.Name, "calendar_create"):
 		return createCalendarCreateTool(toolConfig.Name, description)
+	case strings.Contains(toolConfig.Name, "calendar_update"):
+		return createCalendarUpdateTool(toolConfig.Name, description)
 	case strings.Contains(toolConfig.Name, "calendar_get"):
 		return createCalendarGetTool(toolConfig.Name, description)
 	case strings.Contains(toolConfig.Name, "calendar"):
@@ -264,6 +267,14 @@ func createToolSchema(toolConfig config.ToolConfig) mcp.Tool {
 		return createDriveCreateTool(toolConfig.Name, description)
 	case strings.Contains(toolConfig.Name, "drive"):
 		return createGoogleDriveTool(toolConfig.Name, description)
+
+	// GitHub tools
+	case strings.Contains(toolConfig.Name, "github_repo") || strings.Contains(toolConfig.Name, "repos"):
+		return createGitHubRepoTool(toolConfig.Name, description)
+	case strings.Contains(toolConfig.Name, "github_issue") || strings.Contains(toolConfig.Name, "issues"):
+		return createGitHubIssueTool(toolConfig.Name, description)
+	case strings.Contains(toolConfig.Name, "github"):
+		return createGitHubTool(toolConfig.Name, description)
 
 	// Legacy provider/service based routing
 	default:
@@ -279,6 +290,15 @@ func createToolSchema(toolConfig config.ToolConfig) mcp.Tool {
 			}
 		case "slack":
 			return createSlackTool(toolConfig.Name, description)
+		case "github":
+			switch toolConfig.Service {
+			case "repos":
+				return createGitHubRepoTool(toolConfig.Name, description)
+			case "issues":
+				return createGitHubIssueTool(toolConfig.Name, description)
+			default:
+				return createGitHubTool(toolConfig.Name, description)
+			}
 		}
 	}
 
@@ -414,7 +434,38 @@ func createCalendarCreateTool(name, description string) mcp.Tool {
 			mcp.Description("Event location"),
 		),
 		mcp.WithString("attendees",
-			mcp.Description("Comma-separated list of attendee email addresses"),
+			mcp.Description("Comma-separated list of attendee email addresses (user is automatically added as an attendee)"),
+		),
+	)
+}
+
+func createCalendarUpdateTool(name, description string) mcp.Tool {
+	return mcp.NewTool(name,
+		mcp.WithDescription(description),
+		mcp.WithString("event_id",
+			mcp.Required(),
+			mcp.Description("ID of the event to update"),
+		),
+		mcp.WithString("summary",
+			mcp.Description("Updated event title/summary"),
+		),
+		mcp.WithString("start_time",
+			mcp.Description("Updated start time in ISO 8601 format (e.g., '2024-06-04T10:00:00Z')"),
+		),
+		mcp.WithString("end_time",
+			mcp.Description("Updated end time in ISO 8601 format (e.g., '2024-06-04T11:00:00Z')"),
+		),
+		mcp.WithString("description",
+			mcp.Description("Updated event description"),
+		),
+		mcp.WithString("location",
+			mcp.Description("Updated event location"),
+		),
+		mcp.WithString("attendees",
+			mcp.Description("Updated comma-separated list of attendee email addresses (user is automatically included)"),
+		),
+		mcp.WithString("calendar_id",
+			mcp.Description("Calendar ID (default: 'primary')"),
 		),
 	)
 }
@@ -467,6 +518,72 @@ func createDriveCreateTool(name, description string) mcp.Tool {
 		),
 		mcp.WithString("parent_folder_id",
 			mcp.Description("Parent folder ID (optional)"),
+		),
+	)
+}
+
+// GitHub tool creators
+func createGitHubTool(name, description string) mcp.Tool {
+	return mcp.NewTool(name,
+		mcp.WithDescription(description),
+		mcp.WithString("owner",
+			mcp.Required(),
+			mcp.Description("Repository owner (username or organization)"),
+		),
+		mcp.WithString("repo",
+			mcp.Required(),
+			mcp.Description("Repository name"),
+		),
+		mcp.WithString("action",
+			mcp.Required(),
+			mcp.Description("Action to perform (list, get, contents, file, config)"),
+		),
+	)
+}
+
+func createGitHubRepoTool(name, description string) mcp.Tool {
+	return mcp.NewTool(name,
+		mcp.WithDescription(description),
+		mcp.WithString("owner",
+			mcp.Description("Repository owner (optional for listing user repos)"),
+		),
+		mcp.WithString("repo",
+			mcp.Description("Repository name (required for specific repo operations)"),
+		),
+		mcp.WithString("path",
+			mcp.Description("Path within repository (for file/contents operations)"),
+		),
+		mcp.WithString("visibility",
+			mcp.Description("Repository visibility filter (all, public, private)"),
+		),
+		mcp.WithString("sort",
+			mcp.Description("Sort order (created, updated, pushed, full_name)"),
+		),
+	)
+}
+
+func createGitHubIssueTool(name, description string) mcp.Tool {
+	return mcp.NewTool(name,
+		mcp.WithDescription(description),
+		mcp.WithString("owner",
+			mcp.Required(),
+			mcp.Description("Repository owner (username or organization)"),
+		),
+		mcp.WithString("repo",
+			mcp.Required(),
+			mcp.Description("Repository name"),
+		),
+		mcp.WithString("title",
+			mcp.Description("Issue title (required for creating issues)"),
+		),
+		mcp.WithString("body",
+			mcp.Description("Issue body/description"),
+		),
+		mcp.WithString("labels",
+			mcp.Description("Comma-separated list of labels"),
+		),
+		mcp.WithString("state",
+			mcp.Description("Issue state filter (open, closed, all)"),
 		),
 	)
 }
@@ -881,7 +998,7 @@ func syncToolsFromAuthServer(s *server.MCPServer, authClient *auth.Client, cfg *
 
 // startToolPolling polls the auth server for available tools and updates the MCP server
 func startToolPolling(s *server.MCPServer, authClient *auth.Client, cfg *config.Config, logger sawmill.Logger, cancel context.CancelFunc) {
-	ticker := time.NewTicker(1 * time.Minute) // Poll every minute
+	ticker := time.NewTicker(5 * time.Second) // Poll every 5 seconds for better responsiveness
 	defer ticker.Stop()
 
 	// Track currently added tools to avoid duplicates
@@ -890,7 +1007,7 @@ func startToolPolling(s *server.MCPServer, authClient *auth.Client, cfg *config.
 		currentTools[tool.Name] = true
 	}
 
-	logger.Info("Started tool polling", "interval", "1 minute")
+	logger.Info("Started tool polling", "interval", "5 seconds")
 
 	for {
 		select {
@@ -905,7 +1022,13 @@ func startToolPolling(s *server.MCPServer, authClient *auth.Client, cfg *config.
 				continue
 			}
 
-			// Check for new tools
+			// Create a map of tools currently available from auth server
+			availableTools := make(map[string]bool)
+			for _, toolConfig := range availableToolsResp.Tools {
+				availableTools[toolConfig.Name] = true
+			}
+
+			// Check for new tools to add
 			newTools := false
 			for _, toolConfig := range availableToolsResp.Tools {
 				if !currentTools[toolConfig.Name] {
@@ -920,19 +1043,68 @@ func startToolPolling(s *server.MCPServer, authClient *auth.Client, cfg *config.
 				}
 			}
 
-			// Save updated configuration if new tools were added
-			if newTools {
+			// Check for tools that are no longer available (service disconnected)
+			toolsRemoved := false
+			for toolName := range currentTools {
+				if !availableTools[toolName] {
+					// Tool is no longer available, remove it
+					logger.Info("Removing unavailable tool", "tool", toolName)
+					if cfg.RemoveTool(toolName) {
+						delete(currentTools, toolName)
+						toolsRemoved = true
+						fmt.Fprintf(os.Stderr, "Service disconnected: tool %s removed\n", toolName)
+					}
+				}
+			}
+
+			// Save updated configuration if tools were added or removed
+			configChanged := newTools || toolsRemoved
+			if configChanged {
 				if err := cfg.Save(); err != nil {
 					logger.Error("Failed to save updated configuration", "error", err)
 				} else {
-					logger.Info("Configuration updated with new tools")
-					fmt.Fprintf(os.Stderr, "New tools available! %d tools now configured.\n", len(cfg.GetEnabledTools()))
+					if newTools && toolsRemoved {
+						logger.Info("Configuration updated: tools added and removed")
+						fmt.Fprintf(os.Stderr, "Tools updated! %d tools now configured.\n", len(cfg.GetEnabledTools()))
+					} else if newTools {
+						logger.Info("Configuration updated with new tools")
+						fmt.Fprintf(os.Stderr, "New tools available! %d tools now configured.\n", len(cfg.GetEnabledTools()))
+					} else if toolsRemoved {
+						logger.Info("Configuration updated: removed disconnected tools")
+						fmt.Fprintf(os.Stderr, "Disconnected tools removed. %d tools now configured.\n", len(cfg.GetEnabledTools()))
+					}
+					
+					// Send tool list changed notification to all connected MCP clients
+					s.SendNotificationToAllClients("notifications/tools/list_changed", nil)
+					logger.Info("Sent tool list changed notification to MCP clients")
 				}
 			}
 
 		case <-context.Background().Done():
 			logger.Info("Tool polling stopped")
 			return
+		}
+	}
+}
+
+// startToolChangeListener listens for real-time tool changes from the auth server
+func startToolChangeListener(s *server.MCPServer, authClient *auth.Client, cfg *config.Config, logger sawmill.Logger, cancel context.CancelFunc) {
+	// Suppress unused parameter warnings
+	_ = s
+	_ = authClient
+	_ = cfg
+	_ = cancel
+	logger.Info("Started tool change listener for real-time updates")
+	
+	for {
+		select {
+		case <-context.Background().Done():
+			logger.Info("Tool change listener stopped")
+			return
+		default:
+			// For now, just wait before next check
+			// TODO: Implement tool changes endpoint in auth client
+			time.Sleep(2 * time.Second)
 		}
 	}
 }

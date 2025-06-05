@@ -42,6 +42,20 @@
         </div>
     </div>
 
+    <!-- GitHub Services Section -->
+    <div class="mb-8">
+        <h2 class="text-lg font-medium text-gray-900 mb-4 flex items-center">
+            <i class="fab fa-github text-gray-900 mr-2"></i>
+            GitHub Services
+        </h2>
+        
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {{template "service-card" dict "Service" "GitHub Repositories" "Icon" "fas fa-code-branch" "Color" "gray" "Description" "Access repositories, view code, and manage repository configurations" "Connected" .Services.GitHubRepos.Connected "Email" .Services.GitHubRepos.Username "AuthPath" "/auth/service/github/repos"}}
+            
+            {{template "service-card" dict "Service" "GitHub Issues" "Icon" "fas fa-bug" "Color" "red" "Description" "Create, view, and manage GitHub issues and project tracking" "Connected" .Services.GitHubIssues.Connected "Email" .Services.GitHubIssues.Username "AuthPath" "/auth/service/github/issues"}}
+        </div>
+    </div>
+
     <!-- Slack Services Section (Coming Soon) -->
     <div class="mb-8">
         <h2 class="text-lg font-medium text-gray-900 mb-4 flex items-center">
