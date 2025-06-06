@@ -25,15 +25,15 @@ func getTokensFilePath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to get user home directory: %w", err)
 	}
-	
+
 	configDir := filepath.Join(homeDir, ".config", "mcplocker")
 	tokensFile := filepath.Join(configDir, "service_tokens.json")
-	
+
 	// Ensure config directory exists
 	if err := os.MkdirAll(configDir, 0700); err != nil {
 		return "", fmt.Errorf("failed to create config directory: %w", err)
 	}
-	
+
 	return tokensFile, nil
 }
 
@@ -43,7 +43,7 @@ func (h *WebHandlers) SaveServiceTokens() error {
 	if err != nil {
 		return err
 	}
-	
+
 	// Convert service tokens to persistent format
 	persistentTokens := make(map[string]PersistentServiceConnection)
 	for key, connection := range h.serviceTokens {
@@ -55,17 +55,17 @@ func (h *WebHandlers) SaveServiceTokens() error {
 			UpdatedAt: time.Now(),
 		}
 	}
-	
+
 	// Write to file
 	data, err := json.MarshalIndent(persistentTokens, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal tokens: %w", err)
 	}
-	
+
 	if err := os.WriteFile(tokensFile, data, 0600); err != nil {
 		return fmt.Errorf("failed to write tokens file: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -75,25 +75,25 @@ func (h *WebHandlers) LoadServiceTokens() error {
 	if err != nil {
 		return err
 	}
-	
+
 	// Check if file exists
 	if _, err := os.Stat(tokensFile); os.IsNotExist(err) {
 		// File doesn't exist, that's okay - start with empty tokens
 		return nil
 	}
-	
+
 	// Read file
 	data, err := os.ReadFile(tokensFile)
 	if err != nil {
 		return fmt.Errorf("failed to read tokens file: %w", err)
 	}
-	
+
 	// Parse JSON
 	var persistentTokens map[string]PersistentServiceConnection
 	if err := json.Unmarshal(data, &persistentTokens); err != nil {
 		return fmt.Errorf("failed to unmarshal tokens: %w", err)
 	}
-	
+
 	// Convert back to service connections and validate tokens
 	for key, persistentConnection := range persistentTokens {
 		// Check if token is still valid (not expired)
@@ -106,7 +106,7 @@ func (h *WebHandlers) LoadServiceTokens() error {
 		}
 		// If token is expired, we skip it (effectively removing it)
 	}
-	
+
 	return nil
 }
 
@@ -118,7 +118,7 @@ func (h *WebHandlers) ClearExpiredTokens() error {
 			delete(h.serviceTokens, key)
 		}
 	}
-	
+
 	// Save the cleaned up tokens
 	return h.SaveServiceTokens()
 }

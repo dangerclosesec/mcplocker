@@ -14,18 +14,18 @@ func SecurityHeadersMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Prevent MIME type sniffing
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		
+
 		// Prevent clickjacking
 		w.Header().Set("X-Frame-Options", "DENY")
-		
+
 		// Enable XSS protection
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
-		
+
 		// Force HTTPS in production
 		if os.Getenv("ENV") == "production" {
 			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
 		}
-		
+
 		// Content Security Policy - Allow Tailwind CSS and other CDN resources
 		var csp string
 		if os.Getenv("ENV") == "production" {
@@ -47,13 +47,13 @@ func SecurityHeadersMiddleware(next http.Handler) http.Handler {
 				"frame-ancestors 'none'"
 		}
 		w.Header().Set("Content-Security-Policy", csp)
-		
+
 		// Referrer Policy
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-		
+
 		// Remove server information
 		w.Header().Set("Server", "MCPLocker")
-		
+
 		next.ServeHTTP(w, r)
 	})
 }
@@ -71,14 +71,14 @@ func RequireHTTPS(next http.Handler) http.Handler {
 			if proto == "" {
 				proto = r.Header.Get("X-Url-Scheme")
 			}
-			
+
 			// If we're behind a proxy and it's not HTTPS, redirect
 			if proto != "" && proto != "https" {
 				redirectURL := fmt.Sprintf("https://%s%s", r.Host, r.URL.String())
 				http.Redirect(w, r, redirectURL, http.StatusMovedPermanently)
 				return
 			}
-			
+
 			// If we're not behind a proxy and TLS is not enabled, redirect
 			if proto == "" && r.TLS == nil {
 				redirectURL := fmt.Sprintf("https://%s%s", r.Host, r.URL.String())
@@ -86,7 +86,7 @@ func RequireHTTPS(next http.Handler) http.Handler {
 				return
 			}
 		}
-		
+
 		next.ServeHTTP(w, r)
 	})
 }
@@ -96,19 +96,19 @@ func RateLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Get client IP
 		clientIP := getClientIP(r)
-		
+
 		// Check rate limit (basic implementation)
 		if isRateLimited(clientIP) {
 			// Log rate limit violation
 			if GlobalAuditLogger != nil {
 				GlobalAuditLogger.LogRateLimitExceeded("", "", clientIP)
 			}
-			
+
 			w.Header().Set("Retry-After", "60")
 			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 			return
 		}
-		
+
 		next.ServeHTTP(w, r)
 	})
 }
@@ -123,27 +123,27 @@ func CSRFProtectionMiddleware(next http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			
+
 			// Check CSRF token for web requests
 			token := r.Header.Get("X-CSRF-Token")
 			if token == "" {
 				token = r.FormValue("csrf_token")
 			}
-			
+
 			// Get expected token from session/cookie
 			expectedToken := getCSRFTokenFromSession(r)
-			
+
 			if expectedToken == "" || !isValidCSRFToken(token, expectedToken) {
 				// Log CSRF violation
 				if GlobalAuditLogger != nil {
 					GlobalAuditLogger.LogSecurityViolation("", getClientIP(r), "csrf_token_mismatch", "Invalid or missing CSRF token")
 				}
-				
+
 				http.Error(w, "Forbidden: Invalid CSRF token", http.StatusForbidden)
 				return
 			}
 		}
-		
+
 		next.ServeHTTP(w, r)
 	})
 }
@@ -152,21 +152,21 @@ func CSRFProtectionMiddleware(next http.Handler) http.Handler {
 func AuditMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		
+
 		// Create a response writer wrapper to capture status code
 		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		
+
 		// Process request
 		next.ServeHTTP(wrapped, r)
-		
+
 		// Log request for audit if it's a sensitive operation
 		if isSensitiveEndpoint(r.URL.Path) && GlobalAuditLogger != nil {
 			duration := time.Since(start)
 			success := wrapped.statusCode < 400
-			
+
 			// Extract user info if available (from session or token)
 			userID := getUserIDFromRequest(r)
-			
+
 			GlobalAuditLogger.LogToolExecution(
 				userID,
 				extractActionFromPath(r.URL.Path),
@@ -202,13 +202,13 @@ func getClientIP(r *http.Request) string {
 		ips := strings.Split(forwarded, ",")
 		return strings.TrimSpace(ips[0])
 	}
-	
+
 	// Check X-Real-IP header
 	realIP := r.Header.Get("X-Real-IP")
 	if realIP != "" {
 		return realIP
 	}
-	
+
 	// Fall back to remote address
 	return r.RemoteAddr
 }
@@ -248,7 +248,7 @@ func isSensitiveEndpoint(path string) bool {
 		"/api/tokens/",
 		"/auth/",
 	}
-	
+
 	for _, endpoint := range sensitiveEndpoints {
 		if strings.Contains(path, endpoint) {
 			return true
@@ -265,7 +265,7 @@ func getUserIDFromRequest(r *http.Request) string {
 			return id
 		}
 	}
-	
+
 	// Could also extract from JWT token or session
 	// This is a placeholder implementation
 	return ""

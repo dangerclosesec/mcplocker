@@ -10,22 +10,22 @@ import (
 type MCPProvider interface {
 	// GetName returns the provider name (e.g., "google", "github")
 	GetName() string
-	
+
 	// GetServices returns available services for this provider
 	GetServices() []string
-	
+
 	// GetOAuthConfig returns OAuth2 configuration for a service
 	GetOAuthConfig(service string) (*oauth2.Config, error)
-	
+
 	// GetAuthURL builds the OAuth authorization URL for a service
 	GetAuthURL(service, state string) (string, error)
-	
+
 	// ExchangeCodeForToken exchanges authorization code for tokens
 	ExchangeCodeForToken(ctx context.Context, service, code string) (*oauth2.Token, error)
-	
+
 	// ValidateToken checks if a token is still valid
 	ValidateToken(ctx context.Context, service string, token *oauth2.Token) error
-	
+
 	// RefreshToken refreshes an expired token
 	RefreshToken(ctx context.Context, service string, token *oauth2.Token) (*oauth2.Token, error)
 }

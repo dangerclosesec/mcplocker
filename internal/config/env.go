@@ -21,34 +21,34 @@ func LoadEnvFile(filename string) error {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		
+
 		// Skip empty lines and comments
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		
+
 		// Parse KEY=VALUE format
 		parts := strings.SplitN(line, "=", 2)
 		if len(parts) != 2 {
 			continue
 		}
-		
+
 		key := strings.TrimSpace(parts[0])
 		value := strings.TrimSpace(parts[1])
-		
+
 		// Remove quotes if present
 		if len(value) >= 2 {
 			if (value[0] == '"' && value[len(value)-1] == '"') ||
-			   (value[0] == '\'' && value[len(value)-1] == '\'') {
+				(value[0] == '\'' && value[len(value)-1] == '\'') {
 				value = value[1 : len(value)-1]
 			}
 		}
-		
+
 		// Only set if not already set in environment
 		if os.Getenv(key) == "" {
 			os.Setenv(key, value)
 		}
 	}
-	
+
 	return scanner.Err()
 }

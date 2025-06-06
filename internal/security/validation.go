@@ -143,7 +143,7 @@ func validateLocation(location string) error {
 // validateAttendees validates attendee email list
 func validateAttendees(attendees string) error {
 	emails := strings.Split(attendees, ",")
-	
+
 	if len(emails) > MaxAttendeesCount {
 		return ValidationError{
 			Field:   "attendees",
@@ -251,17 +251,17 @@ func validateEventID(eventID string) error {
 func SanitizeInput(input string) string {
 	// Trim whitespace
 	sanitized := strings.TrimSpace(input)
-	
+
 	// Escape HTML to prevent XSS
 	sanitized = html.EscapeString(sanitized)
-	
+
 	return sanitized
 }
 
 // SanitizeCalendarInput sanitizes all string fields in calendar parameters
 func SanitizeCalendarInput(parameters map[string]interface{}) {
 	stringFields := []string{"summary", "description", "location", "attendees", "calendar_id"}
-	
+
 	for _, field := range stringFields {
 		if value, ok := parameters[field].(string); ok {
 			parameters[field] = SanitizeInput(value)

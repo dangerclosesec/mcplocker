@@ -51,10 +51,10 @@ type AuthRequest struct {
 
 // AuthResponse represents an authentication response
 type AuthResponse struct {
-	Success   bool   `json:"success"`
-	AuthURL   string `json:"auth_url,omitempty"`
-	Message   string `json:"message,omitempty"`
-	Error     string `json:"error,omitempty"`
+	Success bool   `json:"success"`
+	AuthURL string `json:"auth_url,omitempty"`
+	Message string `json:"message,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 // ToolStatusResponse represents the status of available tools

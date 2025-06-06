@@ -10,12 +10,12 @@ import (
 type GoogleConfig struct {
 	Web struct {
 		ClientID                string   `json:"client_id"`
-		ProjectID              string   `json:"project_id"`
-		AuthURI                string   `json:"auth_uri"`
-		TokenURI               string   `json:"token_uri"`
+		ProjectID               string   `json:"project_id"`
+		AuthURI                 string   `json:"auth_uri"`
+		TokenURI                string   `json:"token_uri"`
 		AuthProviderX509CertURL string   `json:"auth_provider_x509_cert_url"`
-		ClientSecret           string   `json:"client_secret"`
-		RedirectURIs           []string `json:"redirect_uris"`
+		ClientSecret            string   `json:"client_secret"`
+		RedirectURIs            []string `json:"redirect_uris"`
 	} `json:"web"`
 }
 

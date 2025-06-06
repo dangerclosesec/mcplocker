@@ -211,12 +211,12 @@ func addProxyTool(s *server.MCPServer, toolConfig config.ToolConfig, authClient 
 		if err != nil {
 			logger.Error("Failed to proxy tool call", "error", err, "tool", toolConfig.Name)
 			fmt.Fprintf(os.Stderr, "DEBUG CLI: Proxy error: %v\n", err)
-			
+
 			// Check if this is an auth error and provide helpful message
 			if strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "Invalid or expired token") || strings.Contains(err.Error(), "Authorization header required") {
 				return mcp.NewToolResultError("Authentication failed. Please run 'mcplocker auth' to re-authenticate."), nil
 			}
-			
+
 			return mcp.NewToolResultError(fmt.Sprintf("Proxy error: %v", err)), nil
 		}
 
@@ -955,7 +955,7 @@ func syncToolsFromAuthServer(s *server.MCPServer, authClient *auth.Client, cfg *
 	if err != nil {
 		return fmt.Errorf("failed to get available tools from auth server: %w", err)
 	}
-	
+
 	fmt.Fprintf(os.Stderr, "Auth server returned %d available tools\n", len(availableToolsResp.Tools))
 	for _, tool := range availableToolsResp.Tools {
 		fmt.Fprintf(os.Stderr, "  Available: %s (%s/%s)\n", tool.Name, tool.Provider, tool.Service)
@@ -1073,7 +1073,7 @@ func startToolPolling(s *server.MCPServer, authClient *auth.Client, cfg *config.
 						logger.Info("Configuration updated: removed disconnected tools")
 						fmt.Fprintf(os.Stderr, "Disconnected tools removed. %d tools now configured.\n", len(cfg.GetEnabledTools()))
 					}
-					
+
 					// Send tool list changed notification to all connected MCP clients
 					s.SendNotificationToAllClients("notifications/tools/list_changed", nil)
 					logger.Info("Sent tool list changed notification to MCP clients")
@@ -1095,7 +1095,7 @@ func startToolChangeListener(s *server.MCPServer, authClient *auth.Client, cfg *
 	_ = cfg
 	_ = cancel
 	logger.Info("Started tool change listener for real-time updates")
-	
+
 	for {
 		select {
 		case <-context.Background().Done():

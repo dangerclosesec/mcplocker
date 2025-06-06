@@ -16,45 +16,45 @@ type AuditEventType string
 
 const (
 	// Authentication events
-	AuditLoginSuccess      AuditEventType = "auth.login.success"
-	AuditLoginFailure      AuditEventType = "auth.login.failure"
-	AuditLogout            AuditEventType = "auth.logout"
-	AuditTokenCreated      AuditEventType = "auth.token.created"
-	AuditTokenRevoked      AuditEventType = "auth.token.revoked"
-	
+	AuditLoginSuccess AuditEventType = "auth.login.success"
+	AuditLoginFailure AuditEventType = "auth.login.failure"
+	AuditLogout       AuditEventType = "auth.logout"
+	AuditTokenCreated AuditEventType = "auth.token.created"
+	AuditTokenRevoked AuditEventType = "auth.token.revoked"
+
 	// Service connection events
 	AuditServiceConnected    AuditEventType = "service.connected"
 	AuditServiceDisconnected AuditEventType = "service.disconnected"
 	AuditServiceAuthFailed   AuditEventType = "service.auth.failed"
-	
+
 	// Tool execution events
-	AuditToolExecuted      AuditEventType = "tool.executed"
-	AuditToolFailed        AuditEventType = "tool.failed"
-	AuditToolRateLimited   AuditEventType = "tool.rate_limited"
-	
+	AuditToolExecuted    AuditEventType = "tool.executed"
+	AuditToolFailed      AuditEventType = "tool.failed"
+	AuditToolRateLimited AuditEventType = "tool.rate_limited"
+
 	// Security events
-	AuditSecurityViolation AuditEventType = "security.violation"
-	AuditValidationFailed  AuditEventType = "security.validation_failed"
+	AuditSecurityViolation  AuditEventType = "security.violation"
+	AuditValidationFailed   AuditEventType = "security.validation_failed"
 	AuditSuspiciousActivity AuditEventType = "security.suspicious_activity"
 )
 
 // AuditEvent represents a security audit log entry
 type AuditEvent struct {
-	ID        string         `json:"id"`
-	Timestamp time.Time      `json:"timestamp"`
-	EventType AuditEventType `json:"event_type"`
-	UserID    string         `json:"user_id,omitempty"`
-	UserEmail string         `json:"user_email,omitempty"`
-	Service   string         `json:"service,omitempty"`
-	Action    string         `json:"action,omitempty"`
-	Resource  string         `json:"resource,omitempty"`
-	IPAddress string         `json:"ip_address,omitempty"`
-	UserAgent string         `json:"user_agent,omitempty"`
-	Success   bool           `json:"success"`
-	ErrorCode string         `json:"error_code,omitempty"`
-	Message   string         `json:"message,omitempty"`
+	ID        string                 `json:"id"`
+	Timestamp time.Time              `json:"timestamp"`
+	EventType AuditEventType         `json:"event_type"`
+	UserID    string                 `json:"user_id,omitempty"`
+	UserEmail string                 `json:"user_email,omitempty"`
+	Service   string                 `json:"service,omitempty"`
+	Action    string                 `json:"action,omitempty"`
+	Resource  string                 `json:"resource,omitempty"`
+	IPAddress string                 `json:"ip_address,omitempty"`
+	UserAgent string                 `json:"user_agent,omitempty"`
+	Success   bool                   `json:"success"`
+	ErrorCode string                 `json:"error_code,omitempty"`
+	Message   string                 `json:"message,omitempty"`
 	Details   map[string]interface{} `json:"details,omitempty"`
-	SessionID string         `json:"session_id,omitempty"`
+	SessionID string                 `json:"session_id,omitempty"`
 }
 
 // AuditLogger handles security audit logging
@@ -70,12 +70,12 @@ func NewAuditLogger() (*AuditLogger, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get home directory: %w", err)
 	}
-	
+
 	logDir := filepath.Join(homeDir, ".config", "mcplocker", "logs")
 	if err := os.MkdirAll(logDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create log directory: %w", err)
 	}
-	
+
 	logFile := filepath.Join(logDir, "security_audit.log")
 	return &AuditLogger{
 		logFile: logFile,
@@ -86,7 +86,7 @@ func NewAuditLogger() (*AuditLogger, error) {
 func (a *AuditLogger) LogEvent(event AuditEvent) error {
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
-	
+
 	// Set timestamp and ID if not provided
 	if event.Timestamp.IsZero() {
 		event.Timestamp = time.Now()
@@ -94,7 +94,7 @@ func (a *AuditLogger) LogEvent(event AuditEvent) error {
 	if event.ID == "" {
 		event.ID = generateEventID()
 	}
-	
+
 	// Hash sensitive data
 	if event.UserID != "" {
 		event.UserID = hashSensitiveData(event.UserID)
@@ -102,24 +102,24 @@ func (a *AuditLogger) LogEvent(event AuditEvent) error {
 	if event.SessionID != "" {
 		event.SessionID = hashSensitiveData(event.SessionID)
 	}
-	
+
 	// Serialize event to JSON
 	eventJSON, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("failed to marshal audit event: %w", err)
 	}
-	
+
 	// Append to log file
 	file, err := os.OpenFile(a.logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to open audit log file: %w", err)
 	}
 	defer file.Close()
-	
+
 	if _, err := file.WriteString(string(eventJSON) + "\n"); err != nil {
 		return fmt.Errorf("failed to write audit log: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -159,7 +159,7 @@ func (a *AuditLogger) LogServiceConnection(userID, service, ipAddress string, su
 	if !success {
 		eventType = AuditServiceAuthFailed
 	}
-	
+
 	event := AuditEvent{
 		EventType: eventType,
 		UserID:    userID,
@@ -168,13 +168,13 @@ func (a *AuditLogger) LogServiceConnection(userID, service, ipAddress string, su
 		Success:   success,
 		Message:   fmt.Sprintf("Service %s connection", service),
 	}
-	
+
 	if errorMsg != "" {
 		event.Details = map[string]interface{}{
 			"error": errorMsg,
 		}
 	}
-	
+
 	a.LogEvent(event)
 }
 
@@ -184,7 +184,7 @@ func (a *AuditLogger) LogToolExecution(userID, toolName, service, ipAddress stri
 	if !success {
 		eventType = AuditToolFailed
 	}
-	
+
 	event := AuditEvent{
 		EventType: eventType,
 		UserID:    userID,
@@ -197,11 +197,11 @@ func (a *AuditLogger) LogToolExecution(userID, toolName, service, ipAddress stri
 			"execution_duration_ms": duration.Milliseconds(),
 		},
 	}
-	
+
 	if errorMsg != "" {
 		event.Details["error"] = errorMsg
 	}
-	
+
 	a.LogEvent(event)
 }
 
@@ -215,7 +215,7 @@ func (a *AuditLogger) LogSecurityViolation(userID, ipAddress, violation, details
 		Message:   "Security violation detected",
 		Details: map[string]interface{}{
 			"violation_type": violation,
-			"details":       details,
+			"details":        details,
 		},
 	}
 	a.LogEvent(event)
