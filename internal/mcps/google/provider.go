@@ -21,7 +21,7 @@ func NewGoogleProvider() (*GoogleProvider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load Google config: %w", err)
 	}
-	
+
 	return &GoogleProvider{
 		config: googleConfig,
 	}, nil
@@ -43,7 +43,7 @@ func (g *GoogleProvider) GetOAuthConfig(service string) (*oauth2.Config, error) 
 	if len(scopes) == 0 {
 		return nil, fmt.Errorf("unsupported service: %s", service)
 	}
-	
+
 	return &oauth2.Config{
 		ClientID:     g.config.GetClientID(),
 		ClientSecret: g.config.GetClientSecret(),
@@ -62,7 +62,7 @@ func (g *GoogleProvider) GetAuthURL(service, state string) (string, error) {
 	if len(scopes) == 0 {
 		return "", fmt.Errorf("unsupported service: %s", service)
 	}
-	
+
 	params := url.Values{}
 	params.Add("client_id", g.config.GetClientID())
 	params.Add("redirect_uri", g.config.GetRedirectURI())
@@ -71,7 +71,7 @@ func (g *GoogleProvider) GetAuthURL(service, state string) (string, error) {
 	params.Add("access_type", "offline")
 	params.Add("prompt", "consent")
 	params.Add("state", state) // Use state to track service and other info
-	
+
 	return g.config.GetAuthURI() + "?" + params.Encode(), nil
 }
 
@@ -81,12 +81,12 @@ func (g *GoogleProvider) ExchangeCodeForToken(ctx context.Context, service, code
 	if err != nil {
 		return nil, err
 	}
-	
+
 	token, err := oauthConfig.Exchange(ctx, code)
 	if err != nil {
 		return nil, fmt.Errorf("failed to exchange code for token: %w", err)
 	}
-	
+
 	return token, nil
 }
 
@@ -95,7 +95,7 @@ func (g *GoogleProvider) ValidateToken(ctx context.Context, service string, toke
 	if !token.Valid() {
 		return fmt.Errorf("token is expired")
 	}
-	
+
 	// TODO: Make a test API call to verify token is actually valid
 	// For now, just check expiration
 	return nil
@@ -107,13 +107,13 @@ func (g *GoogleProvider) RefreshToken(ctx context.Context, service string, token
 	if err != nil {
 		return nil, err
 	}
-	
+
 	tokenSource := oauthConfig.TokenSource(ctx, token)
 	newToken, err := tokenSource.Token()
 	if err != nil {
 		return nil, fmt.Errorf("failed to refresh token: %w", err)
 	}
-	
+
 	return newToken, nil
 }
 

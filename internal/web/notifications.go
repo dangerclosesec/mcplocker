@@ -21,7 +21,7 @@ func NewToolChangeNotifier() *ToolChangeNotifier {
 func (t *ToolChangeNotifier) Subscribe(userID string) <-chan string {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
-	
+
 	ch := make(chan string, 10) // Buffered channel
 	t.subscribers[userID] = ch
 	return ch
@@ -31,7 +31,7 @@ func (t *ToolChangeNotifier) Subscribe(userID string) <-chan string {
 func (t *ToolChangeNotifier) Unsubscribe(userID string) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
-	
+
 	if ch, exists := t.subscribers[userID]; exists {
 		close(ch)
 		delete(t.subscribers, userID)
@@ -42,7 +42,7 @@ func (t *ToolChangeNotifier) Unsubscribe(userID string) {
 func (t *ToolChangeNotifier) NotifyToolChange(userID string) {
 	t.mutex.RLock()
 	defer t.mutex.RUnlock()
-	
+
 	if ch, exists := t.subscribers[userID]; exists {
 		select {
 		case ch <- userID:

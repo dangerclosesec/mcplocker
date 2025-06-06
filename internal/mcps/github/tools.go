@@ -78,30 +78,30 @@ type GitHubIssue struct {
 // makeGitHubAPIRequest makes an authenticated request to the GitHub API
 func makeGitHubAPIRequest(ctx context.Context, token *oauth2.Token, method, url string, body io.Reader) (*http.Response, error) {
 	client := oauth2.NewClient(ctx, oauth2.StaticTokenSource(token))
-	
+
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	
+
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", "MCPLocker-GitHub-Connector/1.0")
-	
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to make request: %w", err)
 	}
-	
+
 	return resp, nil
 }
 
 // listRepositories lists user's repositories
 func listRepositories(parameters map[string]interface{}, token *oauth2.Token) (interface{}, error) {
 	ctx := context.Background()
-	
+
 	// Build API URL
 	url := "https://api.github.com/user/repos"
-	
+
 	// Add query parameters
 	params := []string{}
 	if visibility, ok := parameters["visibility"].(string); ok && visibility != "" {
@@ -113,23 +113,23 @@ func listRepositories(parameters map[string]interface{}, token *oauth2.Token) (i
 	if len(params) > 0 {
 		url += "?" + strings.Join(params, "&")
 	}
-	
+
 	resp, err := makeGitHubAPIRequest(ctx, token, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("GitHub API error: %s (status: %d)", string(body), resp.StatusCode)
 	}
-	
+
 	var repos []GitHubRepository
 	if err := json.NewDecoder(resp.Body).Decode(&repos); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
-	
+
 	return map[string]interface{}{
 		"success":      true,
 		"message":      "Repositories retrieved successfully",
@@ -141,35 +141,35 @@ func listRepositories(parameters map[string]interface{}, token *oauth2.Token) (i
 // getRepository gets details of a specific repository
 func getRepository(parameters map[string]interface{}, token *oauth2.Token) (interface{}, error) {
 	ctx := context.Background()
-	
+
 	owner, ok := parameters["owner"].(string)
 	if !ok || owner == "" {
 		return nil, fmt.Errorf("owner parameter is required")
 	}
-	
+
 	repo, ok := parameters["repo"].(string)
 	if !ok || repo == "" {
 		return nil, fmt.Errorf("repo parameter is required")
 	}
-	
+
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s", owner, repo)
-	
+
 	resp, err := makeGitHubAPIRequest(ctx, token, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("GitHub API error: %s (status: %d)", string(body), resp.StatusCode)
 	}
-	
+
 	var repository GitHubRepository
 	if err := json.NewDecoder(resp.Body).Decode(&repository); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
-	
+
 	return map[string]interface{}{
 		"success":    true,
 		"message":    "Repository details retrieved successfully",
@@ -180,40 +180,40 @@ func getRepository(parameters map[string]interface{}, token *oauth2.Token) (inte
 // getRepositoryContents lists contents of a repository directory
 func getRepositoryContents(parameters map[string]interface{}, token *oauth2.Token) (interface{}, error) {
 	ctx := context.Background()
-	
+
 	owner, ok := parameters["owner"].(string)
 	if !ok || owner == "" {
 		return nil, fmt.Errorf("owner parameter is required")
 	}
-	
+
 	repo, ok := parameters["repo"].(string)
 	if !ok || repo == "" {
 		return nil, fmt.Errorf("repo parameter is required")
 	}
-	
+
 	path := ""
 	if p, ok := parameters["path"].(string); ok {
 		path = p
 	}
-	
+
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/contents/%s", owner, repo, path)
-	
+
 	resp, err := makeGitHubAPIRequest(ctx, token, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("GitHub API error: %s (status: %d)", string(body), resp.StatusCode)
 	}
-	
+
 	var contents []GitHubFile
 	if err := json.NewDecoder(resp.Body).Decode(&contents); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
-	
+
 	return map[string]interface{}{
 		"success":  true,
 		"message":  "Repository contents retrieved successfully",
@@ -225,35 +225,35 @@ func getRepositoryContents(parameters map[string]interface{}, token *oauth2.Toke
 // getRepositoryFile gets the content of a specific file
 func getRepositoryFile(parameters map[string]interface{}, token *oauth2.Token) (interface{}, error) {
 	ctx := context.Background()
-	
+
 	owner, ok := parameters["owner"].(string)
 	if !ok || owner == "" {
 		return nil, fmt.Errorf("owner parameter is required")
 	}
-	
+
 	repo, ok := parameters["repo"].(string)
 	if !ok || repo == "" {
 		return nil, fmt.Errorf("repo parameter is required")
 	}
-	
+
 	path, ok := parameters["path"].(string)
 	if !ok || path == "" {
 		return nil, fmt.Errorf("path parameter is required")
 	}
-	
+
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/contents/%s", owner, repo, path)
-	
+
 	resp, err := makeGitHubAPIRequest(ctx, token, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("GitHub API error: %s (status: %d)", string(body), resp.StatusCode)
 	}
-	
+
 	var file struct {
 		Name        string `json:"name"`
 		Path        string `json:"path"`
@@ -263,11 +263,11 @@ func getRepositoryFile(parameters map[string]interface{}, token *oauth2.Token) (
 		DownloadURL string `json:"download_url"`
 		HTMLURL     string `json:"html_url"`
 	}
-	
+
 	if err := json.NewDecoder(resp.Body).Decode(&file); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
-	
+
 	return map[string]interface{}{
 		"success":      true,
 		"message":      "File content retrieved successfully",
@@ -287,18 +287,18 @@ func getRepositoryConfig(parameters map[string]interface{}, token *oauth2.Token)
 	if !ok || owner == "" {
 		return nil, fmt.Errorf("owner parameter is required")
 	}
-	
+
 	repo, ok := parameters["repo"].(string)
 	if !ok || repo == "" {
 		return nil, fmt.Errorf("repo parameter is required")
 	}
-	
+
 	// Get repository details first
 	repoResult, err := getRepository(parameters, token)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Check for common configuration files
 	configFiles := []string{
 		".github/workflows",
@@ -311,16 +311,16 @@ func getRepositoryConfig(parameters map[string]interface{}, token *oauth2.Token)
 		".github/dependabot.yml",
 		".github/CODEOWNERS",
 	}
-	
+
 	foundConfigs := []map[string]interface{}{}
-	
+
 	for _, configPath := range configFiles {
 		configParams := map[string]interface{}{
 			"owner": owner,
 			"repo":  repo,
 			"path":  configPath,
 		}
-		
+
 		result, err := getRepositoryContents(configParams, token)
 		if err == nil {
 			if resultMap, ok := result.(map[string]interface{}); ok {
@@ -334,11 +334,11 @@ func getRepositoryConfig(parameters map[string]interface{}, token *oauth2.Token)
 			}
 		}
 	}
-	
+
 	return map[string]interface{}{
-		"success":     true,
-		"message":     "Repository configuration retrieved successfully",
-		"repository":  repoResult,
+		"success":      true,
+		"message":      "Repository configuration retrieved successfully",
+		"repository":   repoResult,
 		"config_files": foundConfigs,
 	}, nil
 }
@@ -346,19 +346,19 @@ func getRepositoryConfig(parameters map[string]interface{}, token *oauth2.Token)
 // listIssues lists repository issues
 func listIssues(parameters map[string]interface{}, token *oauth2.Token) (interface{}, error) {
 	ctx := context.Background()
-	
+
 	owner, ok := parameters["owner"].(string)
 	if !ok || owner == "" {
 		return nil, fmt.Errorf("owner parameter is required")
 	}
-	
+
 	repo, ok := parameters["repo"].(string)
 	if !ok || repo == "" {
 		return nil, fmt.Errorf("repo parameter is required")
 	}
-	
+
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/issues", owner, repo)
-	
+
 	// Add query parameters
 	params := []string{}
 	if state, ok := parameters["state"].(string); ok && state != "" {
@@ -370,23 +370,23 @@ func listIssues(parameters map[string]interface{}, token *oauth2.Token) (interfa
 	if len(params) > 0 {
 		url += "?" + strings.Join(params, "&")
 	}
-	
+
 	resp, err := makeGitHubAPIRequest(ctx, token, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("GitHub API error: %s (status: %d)", string(body), resp.StatusCode)
 	}
-	
+
 	var issues []GitHubIssue
 	if err := json.NewDecoder(resp.Body).Decode(&issues); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
-	
+
 	return map[string]interface{}{
 		"success":     true,
 		"message":     "Issues retrieved successfully",
@@ -398,32 +398,32 @@ func listIssues(parameters map[string]interface{}, token *oauth2.Token) (interfa
 // createIssue creates a new issue in a repository
 func createIssue(parameters map[string]interface{}, token *oauth2.Token) (interface{}, error) {
 	ctx := context.Background()
-	
+
 	owner, ok := parameters["owner"].(string)
 	if !ok || owner == "" {
 		return nil, fmt.Errorf("owner parameter is required")
 	}
-	
+
 	repo, ok := parameters["repo"].(string)
 	if !ok || repo == "" {
 		return nil, fmt.Errorf("repo parameter is required")
 	}
-	
+
 	title, ok := parameters["title"].(string)
 	if !ok || title == "" {
 		return nil, fmt.Errorf("title parameter is required")
 	}
-	
+
 	body := ""
 	if b, ok := parameters["body"].(string); ok {
 		body = b
 	}
-	
+
 	issueData := map[string]interface{}{
 		"title": title,
 		"body":  body,
 	}
-	
+
 	if labels, ok := parameters["labels"].(string); ok && labels != "" {
 		labelList := strings.Split(labels, ",")
 		for i, label := range labelList {
@@ -431,30 +431,30 @@ func createIssue(parameters map[string]interface{}, token *oauth2.Token) (interf
 		}
 		issueData["labels"] = labelList
 	}
-	
+
 	jsonData, err := json.Marshal(issueData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal issue data: %w", err)
 	}
-	
+
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/issues", owner, repo)
-	
+
 	resp, err := makeGitHubAPIRequest(ctx, token, "POST", url, strings.NewReader(string(jsonData)))
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("GitHub API error: %s (status: %d)", string(body), resp.StatusCode)
 	}
-	
+
 	var issue GitHubIssue
 	if err := json.NewDecoder(resp.Body).Decode(&issue); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
-	
+
 	return map[string]interface{}{
 		"success": true,
 		"message": "Issue created successfully",

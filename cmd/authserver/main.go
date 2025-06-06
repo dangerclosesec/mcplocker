@@ -37,17 +37,17 @@ import (
 var (
 	// Global flags
 	debug bool
-	
+
 	// In-memory storage (use database in production)
-	authCodes           = make(map[string]*AuthCode)
-	accessTokens        = make(map[string]*AccessToken)
-	apiTokens           = make(map[string]*APIToken)
+	authCodes            = make(map[string]*AuthCode)
+	accessTokens         = make(map[string]*AccessToken)
+	apiTokens            = make(map[string]*APIToken)
 	pendingOAuthRequests = make(map[string]*OAuthRequest)
-	storageMutex        = sync.RWMutex{}
-	
+	storageMutex         = sync.RWMutex{}
+
 	// MCP manager for handling providers
 	mcpManager *mcps.MCPManager
-	
+
 	// Tool change tracking
 	toolChangeSignal = make(chan string, 100) // Buffer for user IDs with tool changes
 )
@@ -107,7 +107,7 @@ var mcplockerClient = &OAuthClient{
 	Name:   "MCPLocker CLI",
 	RedirectURIs: []string{
 		"http://localhost:38742/callback", // CLI callback port
-		"urn:ietf:wg:oauth:2.0:oob",      // Out-of-band flow
+		"urn:ietf:wg:oauth:2.0:oob",       // Out-of-band flow
 	},
 }
 
@@ -159,7 +159,7 @@ func main() {
 
 	// Initialize MCP manager and register providers
 	mcpManager = mcps.NewMCPManager()
-	
+
 	// Register Google provider
 	googleProvider, err := google.NewGoogleProvider()
 	if err != nil {
@@ -167,7 +167,7 @@ func main() {
 		os.Exit(1)
 	}
 	mcpManager.RegisterProvider(googleProvider)
-	
+
 	// Register GitHub provider (TODO: load from config)
 	githubProvider := github.NewGitHubProvider(
 		os.Getenv("GITHUB_CLIENT_ID"),
@@ -175,7 +175,7 @@ func main() {
 		"http://localhost:38741/api/auth/callback/github",
 	)
 	mcpManager.RegisterProvider(githubProvider)
-	
+
 	logger.Info("Registered MCP providers", "providers", []string{"google", "github"})
 
 	r := chi.NewRouter()
@@ -184,7 +184,7 @@ func main() {
 	r.Use(security.SecurityHeadersMiddleware)
 	r.Use(security.RequireHTTPS)
 	r.Use(security.AuditMiddleware)
-	
+
 	// Add standard middleware
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -192,7 +192,7 @@ func main() {
 
 	// Initialize web handlers
 	webHandlers := web.NewWebHandlers()
-	
+
 	// Initialize global tool change notifier
 	web.GlobalToolChangeNotifier = web.NewToolChangeNotifier()
 
@@ -243,9 +243,19 @@ func main() {
 		})
 	})
 
+	// Determine bind address - use 0.0.0.0 in container environments, 127.0.0.1 for local dev
+	bindAddr := os.Getenv("BIND_ADDR")
+	if bindAddr == "" {
+		if os.Getenv("BUILD_ENV") == "dev" || os.Getenv("CONTAINER") == "true" {
+			bindAddr = "0.0.0.0:38741"
+		} else {
+			bindAddr = "127.0.0.1:38741"
+		}
+	}
+
 	// Create HTTP server with graceful shutdown
 	srv := &http.Server{
-		Addr: "127.0.0.1:38741",
+		Addr: bindAddr,
 		BaseContext: func(net.Listener) context.Context {
 			return ctx
 		},
@@ -287,69 +297,69 @@ func main() {
 // makeAuthMiddleware creates an auth middleware with access to webHandlers
 func makeAuthMiddleware(webHandlers *web.WebHandlers) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "Authorization header required", http.StatusUnauthorized)
-			return
-		}
-
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-		if token == "" || token == authHeader {
-			http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
-			return
-		}
-
-		hashedToken := hashToken(token)
-		
-		storageMutex.RLock()
-		defer storageMutex.RUnlock()
-		
-		// Check OAuth access tokens first
-		if accessToken, exists := accessTokens[hashedToken]; exists {
-			if accessToken.ExpiresAt.After(time.Now()) {
-				// Add user context to request
-				ctx := context.WithValue(r.Context(), "userID", accessToken.UserID)
-				ctx = context.WithValue(ctx, "clientID", accessToken.ClientID)
-				ctx = context.WithValue(ctx, "authType", "oauth")
-				next.ServeHTTP(w, r.WithContext(ctx))
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			authHeader := r.Header.Get("Authorization")
+			if authHeader == "" {
+				http.Error(w, "Authorization header required", http.StatusUnauthorized)
 				return
 			}
-			// Clean up expired token
-			delete(accessTokens, hashedToken)
-		}
-		
-		// Check legacy API tokens (from authserver storage)
-		for _, apiToken := range apiTokens {
-			if apiToken.Token == hashedToken {
-				if apiToken.ExpiresAt == nil || apiToken.ExpiresAt.After(time.Now()) {
-					// Update last used timestamp
-					apiToken.LastUsed = &[]time.Time{time.Now()}[0]
-					
+
+			token := strings.TrimPrefix(authHeader, "Bearer ")
+			if token == "" || token == authHeader {
+				http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
+				return
+			}
+
+			hashedToken := hashToken(token)
+
+			storageMutex.RLock()
+			defer storageMutex.RUnlock()
+
+			// Check OAuth access tokens first
+			if accessToken, exists := accessTokens[hashedToken]; exists {
+				if accessToken.ExpiresAt.After(time.Now()) {
+					// Add user context to request
+					ctx := context.WithValue(r.Context(), "userID", accessToken.UserID)
+					ctx = context.WithValue(ctx, "clientID", accessToken.ClientID)
+					ctx = context.WithValue(ctx, "authType", "oauth")
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				}
+				// Clean up expired token
+				delete(accessTokens, hashedToken)
+			}
+
+			// Check legacy API tokens (from authserver storage)
+			for _, apiToken := range apiTokens {
+				if apiToken.Token == hashedToken {
+					if apiToken.ExpiresAt == nil || apiToken.ExpiresAt.After(time.Now()) {
+						// Update last used timestamp
+						apiToken.LastUsed = &[]time.Time{time.Now()}[0]
+
+						// Add user context to request
+						ctx := context.WithValue(r.Context(), "userID", apiToken.UserID)
+						ctx = context.WithValue(ctx, "tokenID", apiToken.ID)
+						ctx = context.WithValue(ctx, "authType", "api_token_legacy")
+						next.ServeHTTP(w, r.WithContext(ctx))
+						return
+					}
+				}
+			}
+
+			// Check new API tokens (from web token manager)
+			if webHandlers != nil {
+				if apiToken, err := webHandlers.ValidateAPIToken(token); err == nil && apiToken != nil {
 					// Add user context to request
 					ctx := context.WithValue(r.Context(), "userID", apiToken.UserID)
 					ctx = context.WithValue(ctx, "tokenID", apiToken.ID)
-					ctx = context.WithValue(ctx, "authType", "api_token_legacy")
+					ctx = context.WithValue(ctx, "authType", "api_token")
 					next.ServeHTTP(w, r.WithContext(ctx))
 					return
 				}
 			}
-		}
 
-		// Check new API tokens (from web token manager)
-		if webHandlers != nil {
-			if apiToken, err := webHandlers.ValidateAPIToken(token); err == nil && apiToken != nil {
-				// Add user context to request
-				ctx := context.WithValue(r.Context(), "userID", apiToken.UserID)
-				ctx = context.WithValue(ctx, "tokenID", apiToken.ID)
-				ctx = context.WithValue(ctx, "authType", "api_token")
-				next.ServeHTTP(w, r.WithContext(ctx))
-				return
-			}
-		}
-
-		http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
-	})
+			http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
+		})
 	}
 }
 
@@ -441,7 +451,7 @@ func handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 	provider := chi.URLParam(r, "provider")
 	code := r.URL.Query().Get("code")
 	state := r.URL.Query().Get("state")
-	
+
 	if code == "" {
 		http.Error(w, "Authorization code not provided", http.StatusBadRequest)
 		return
@@ -547,7 +557,7 @@ func handleProxyToolWithWebHandlers(w http.ResponseWriter, r *http.Request, webH
 		http.Error(w, "User ID not found in request context", http.StatusUnauthorized)
 		return
 	}
-	
+
 	fmt.Printf("DEBUG: Authenticated user ID: %s\n", userID)
 
 	// Determine service based on tool name
@@ -578,7 +588,7 @@ func handleProxyToolWithWebHandlers(w http.ResponseWriter, r *http.Request, webH
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
-	
+
 	fmt.Printf("DEBUG: Found service connection for %s\n", service)
 
 	// Check if token is still valid
@@ -592,24 +602,24 @@ func handleProxyToolWithWebHandlers(w http.ResponseWriter, r *http.Request, webH
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
-	
+
 	fmt.Printf("DEBUG: Service token is valid for %s\n", service)
 
 	// Execute the actual tool call with the user's service credentials
 	fmt.Printf("DEBUG: Executing tool call for %s with parameters: %+v\n", req.ToolName, req.Parameters)
 	result, err := executeToolCall(req.ToolName, req.Parameters, serviceConnection.Token)
-	
+
 	// Calculate execution duration for audit logging
 	duration := time.Since(startTime)
-	
+
 	if err != nil {
 		fmt.Printf("DEBUG: Tool execution failed: %v\n", err)
-		
+
 		// Log failed tool execution
 		if security.GlobalAuditLogger != nil {
 			security.GlobalAuditLogger.LogToolExecution(userID, req.ToolName, service, clientIP, false, err.Error(), duration)
 		}
-		
+
 		resp := auth.ProxyResponse{
 			Success: false,
 			Error:   fmt.Sprintf("Tool execution failed: %v", err),
@@ -618,7 +628,7 @@ func handleProxyToolWithWebHandlers(w http.ResponseWriter, r *http.Request, webH
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
-	
+
 	fmt.Printf("DEBUG: Tool execution successful, result: %+v\n", result)
 
 	// Log successful tool execution
@@ -740,17 +750,17 @@ func handleOAuthAuthorizeWithWebHandlers(w http.ResponseWriter, r *http.Request,
 		// Store OAuth request parameters in a temporary store for after login
 		oauthStateKey := generateSecureToken()
 		oauthRequest := &OAuthRequest{
-			ClientID:     clientID,
-			RedirectURI:  redirectURI,
-			Scope:        scope,
-			State:        state,
-			ExpiresAt:    time.Now().Add(30 * time.Minute),
+			ClientID:    clientID,
+			RedirectURI: redirectURI,
+			Scope:       scope,
+			State:       state,
+			ExpiresAt:   time.Now().Add(30 * time.Minute),
 		}
-		
+
 		storageMutex.Lock()
 		pendingOAuthRequests[oauthStateKey] = oauthRequest
 		storageMutex.Unlock()
-		
+
 		// Store return URL in cookie for after login
 		returnURL := fmt.Sprintf("/api/oauth/complete?oauth_state=%s", oauthStateKey)
 		http.SetCookie(w, &http.Cookie{
@@ -761,7 +771,7 @@ func handleOAuthAuthorizeWithWebHandlers(w http.ResponseWriter, r *http.Request,
 			HttpOnly: true,
 			Secure:   false, // Set to true in production with HTTPS
 		})
-		
+
 		// Redirect to login page
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
@@ -991,7 +1001,7 @@ func handleCreateToken(w http.ResponseWriter, r *http.Request) {
 // handleRevokeToken revokes an API token
 func handleRevokeToken(w http.ResponseWriter, r *http.Request) {
 	tokenID := chi.URLParam(r, "tokenId")
-	
+
 	// TODO: Get user ID from session and validate ownership
 	cookie, _ := r.Cookie("session")
 	userID := "user-" + cookie.Value
@@ -1213,11 +1223,10 @@ func getServiceFromToolName(toolName string) string {
 	}
 }
 
-
 // executeToolCall executes the actual API call for a tool using service credentials
 func executeToolCall(toolName string, parameters map[string]interface{}, token *oauth2.Token) (interface{}, error) {
 	service := getServiceFromToolName(toolName)
-	
+
 	switch {
 	case service == "gmail" || service == "calendar" || service == "drive":
 		return google.ExecuteGoogleTool(toolName, parameters, token)
@@ -1228,22 +1237,21 @@ func executeToolCall(toolName string, parameters map[string]interface{}, token *
 	}
 }
 
-
 // makeAvailableToolsHandler creates a handler that returns available tools based on user's authenticated services
 func makeAvailableToolsHandler(webHandlers *web.WebHandlers) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Get user from token authentication (already validated by authMiddleware)
 		userID := r.Context().Value("userID").(string)
-		
+
 		// Get available tools based on authenticated services
 		availableTools := getAvailableToolsForUser(userID, webHandlers)
-		
+
 		response := struct {
 			Tools []config.ToolConfig `json:"tools"`
 		}{
 			Tools: availableTools,
 		}
-		
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(response)
 	}
@@ -1252,14 +1260,14 @@ func makeAvailableToolsHandler(webHandlers *web.WebHandlers) http.HandlerFunc {
 // getAvailableToolsForUser returns tools available based on user's authenticated services
 func getAvailableToolsForUser(userID string, webHandlers *web.WebHandlers) []config.ToolConfig {
 	var tools []config.ToolConfig
-	
+
 	// Check which services the user has authenticated
 	// We need to get the user from the web handlers to check service connections
 	// For now, we'll check the service tokens directly
-	
+
 	storageMutex.RLock()
 	defer storageMutex.RUnlock()
-	
+
 	// Check Google services
 	services := []string{"gmail", "calendar", "drive"}
 	for _, service := range services {
@@ -1277,7 +1285,7 @@ func getAvailableToolsForUser(userID string, webHandlers *web.WebHandlers) []con
 				})
 				tools = append(tools, config.ToolConfig{
 					Name:          "gmail_read_emails",
-					Provider:      "google", 
+					Provider:      "google",
 					Service:       "gmail",
 					Enabled:       true,
 					Authenticated: true,
@@ -1286,7 +1294,7 @@ func getAvailableToolsForUser(userID string, webHandlers *web.WebHandlers) []con
 				tools = append(tools, config.ToolConfig{
 					Name:          "calendar_create_event",
 					Provider:      "google",
-					Service:       "calendar", 
+					Service:       "calendar",
 					Enabled:       true,
 					Authenticated: true,
 				})
@@ -1315,14 +1323,14 @@ func getAvailableToolsForUser(userID string, webHandlers *web.WebHandlers) []con
 				tools = append(tools, config.ToolConfig{
 					Name:          "drive_create_file",
 					Provider:      "google",
-					Service:       "drive", 
+					Service:       "drive",
 					Enabled:       true,
 					Authenticated: true,
 				})
 			}
 		}
 	}
-	
+
 	// Check GitHub services
 	githubServices := []string{"repos", "issues"}
 	for _, service := range githubServices {
@@ -1384,7 +1392,7 @@ func getAvailableToolsForUser(userID string, webHandlers *web.WebHandlers) []con
 			}
 		}
 	}
-	
+
 	fmt.Printf("Returning %d tools for user %s\n", len(tools), userID)
 	return tools
 }
@@ -1396,17 +1404,17 @@ func handleToolChanges(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "User ID not found in request context", http.StatusUnauthorized)
 		return
 	}
-	
+
 	// Set headers for Server-Sent Events
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	
+
 	// Create a timeout context for this request
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	
+
 	// Listen for tool changes for this user
 	for {
 		select {
@@ -1429,4 +1437,3 @@ func handleToolChanges(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
-

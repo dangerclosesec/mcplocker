@@ -10,7 +10,7 @@ import (
 // ExecuteGoogleTool executes Google API calls based on the tool name
 func ExecuteGoogleTool(toolName string, parameters map[string]interface{}, token *oauth2.Token) (interface{}, error) {
 	service := getServiceFromToolName(toolName)
-	
+
 	switch service {
 	case "gmail":
 		return ExecuteGmailTool(toolName, parameters, token)

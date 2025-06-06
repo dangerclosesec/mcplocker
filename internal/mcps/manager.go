@@ -11,9 +11,9 @@ import (
 
 // MCPManager manages MCP providers and service connections
 type MCPManager struct {
-	registry          *ProviderRegistry
+	registry           *ProviderRegistry
 	serviceConnections map[string]*ServiceConnection // key: userID:provider:service
-	mutex             sync.RWMutex
+	mutex              sync.RWMutex
 }
 
 // NewMCPManager creates a new MCP manager
@@ -50,10 +50,10 @@ func (m *MCPManager) GetAuthURL(providerName, service, userID string) (string, e
 	if !exists {
 		return "", fmt.Errorf("provider %s not found", providerName)
 	}
-	
+
 	// Create state with provider:service:userID to track the auth request
 	state := fmt.Sprintf("%s:%s:%s", providerName, service, userID)
-	
+
 	return provider.GetAuthURL(service, state)
 }
 
@@ -63,14 +63,14 @@ func (m *MCPManager) HandleOAuthCallback(providerName, service, userID, code str
 	if !exists {
 		return fmt.Errorf("provider %s not found", providerName)
 	}
-	
+
 	// Exchange code for token
 	ctx := context.Background()
 	token, err := provider.ExchangeCodeForToken(ctx, service, code)
 	if err != nil {
 		return fmt.Errorf("failed to exchange code for token: %w", err)
 	}
-	
+
 	// Store the service connection
 	connection := &ServiceConnection{
 		Provider:    providerName,
@@ -79,24 +79,24 @@ func (m *MCPManager) HandleOAuthCallback(providerName, service, userID, code str
 		Token:       token,
 		ConnectedAt: time.Now().Format(time.RFC3339),
 	}
-	
+
 	key := m.buildConnectionKey(userID, providerName, service)
-	
+
 	m.mutex.Lock()
 	m.serviceConnections[key] = connection
 	m.mutex.Unlock()
-	
+
 	return nil
 }
 
 // GetServiceConnection retrieves a service connection for a user
 func (m *MCPManager) GetServiceConnection(userID, providerName, service string) (*ServiceConnection, bool) {
 	key := m.buildConnectionKey(userID, providerName, service)
-	
+
 	m.mutex.RLock()
 	connection, exists := m.serviceConnections[key]
 	m.mutex.RUnlock()
-	
+
 	return connection, exists
 }
 
@@ -105,7 +105,7 @@ func (m *MCPManager) GetServiceConnectionByKey(key string) (*ServiceConnection, 
 	m.mutex.RLock()
 	connection, exists := m.serviceConnections[key]
 	m.mutex.RUnlock()
-	
+
 	return connection, exists
 }
 
@@ -113,16 +113,16 @@ func (m *MCPManager) GetServiceConnectionByKey(key string) (*ServiceConnection, 
 func (m *MCPManager) GetUserConnections(userID string) map[string]*ServiceConnection {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-	
+
 	connections := make(map[string]*ServiceConnection)
 	prefix := userID + ":"
-	
+
 	for key, connection := range m.serviceConnections {
 		if len(key) > len(prefix) && key[:len(prefix)] == prefix {
 			connections[key] = connection
 		}
 	}
-	
+
 	return connections
 }
 
@@ -132,16 +132,16 @@ func (m *MCPManager) RefreshToken(userID, providerName, service string) error {
 	if !exists {
 		return fmt.Errorf("provider %s not found", providerName)
 	}
-	
+
 	key := m.buildConnectionKey(userID, providerName, service)
-	
+
 	m.mutex.Lock()
 	connection, exists := m.serviceConnections[key]
 	if !exists {
 		m.mutex.Unlock()
 		return fmt.Errorf("service connection not found")
 	}
-	
+
 	// Refresh the token
 	ctx := context.Background()
 	newToken, err := provider.RefreshToken(ctx, service, connection.Token)
@@ -149,13 +149,13 @@ func (m *MCPManager) RefreshToken(userID, providerName, service string) error {
 		m.mutex.Unlock()
 		return fmt.Errorf("failed to refresh token: %w", err)
 	}
-	
+
 	// Update the connection
 	connection.Token = newToken
 	connection.LastUsed = time.Now().Format(time.RFC3339)
 	m.serviceConnections[key] = connection
 	m.mutex.Unlock()
-	
+
 	return nil
 }
 
@@ -165,12 +165,12 @@ func (m *MCPManager) ValidateToken(userID, providerName, service string) error {
 	if !exists {
 		return fmt.Errorf("provider %s not found", providerName)
 	}
-	
+
 	connection, exists := m.GetServiceConnection(userID, providerName, service)
 	if !exists {
 		return fmt.Errorf("service connection not found")
 	}
-	
+
 	ctx := context.Background()
 	return provider.ValidateToken(ctx, service, connection.Token)
 }
@@ -178,7 +178,7 @@ func (m *MCPManager) ValidateToken(userID, providerName, service string) error {
 // RemoveServiceConnection removes a service connection
 func (m *MCPManager) RemoveServiceConnection(userID, providerName, service string) {
 	key := m.buildConnectionKey(userID, providerName, service)
-	
+
 	m.mutex.Lock()
 	delete(m.serviceConnections, key)
 	m.mutex.Unlock()
@@ -190,7 +190,7 @@ func (m *MCPManager) GetOAuthConfig(providerName, service string) (*oauth2.Confi
 	if !exists {
 		return nil, fmt.Errorf("provider %s not found", providerName)
 	}
-	
+
 	return provider.GetOAuthConfig(service)
 }
 

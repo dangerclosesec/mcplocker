@@ -4,3 +4,4 @@ authserver
 cli
 test.html
 *.json
+tmp/

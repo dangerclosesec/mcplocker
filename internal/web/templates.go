@@ -28,14 +28,14 @@ func init() {
 			return dict
 		},
 	}
-	
+
 	// Parse login template (standalone)
 	loginTmpl, err := template.New("login.html").Funcs(funcMap).ParseFS(templatesFS, "templates/login.html")
 	if err != nil {
 		panic("Failed to parse login template: " + err.Error())
 	}
 	templateCache["login.html"] = loginTmpl
-	
+
 	// Parse each content template with layout
 	contentTemplates := []string{"dashboard.html", "services.html", "tokens.html"}
 	for _, tmplName := range contentTemplates {
@@ -50,17 +50,17 @@ func init() {
 // RenderTemplate renders a template with the given data
 func RenderTemplate(w http.ResponseWriter, name string, data interface{}) error {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	
+
 	tmpl, exists := templateCache[name]
 	if !exists {
 		return fmt.Errorf("template not found: %s", name)
 	}
-	
+
 	// For login page, execute the login template directly (standalone)
 	if name == "login.html" {
 		return tmpl.Execute(w, data)
 	}
-	
+
 	// For other pages, execute the layout template
 	return tmpl.ExecuteTemplate(w, "layout.html", data)
 }
@@ -75,10 +75,10 @@ type PageData struct {
 
 // User represents an authenticated user
 type User struct {
-	ID       string `json:"id"`
-	Email    string `json:"email"`
-	Name     string `json:"name"`
-	Picture  string `json:"picture"`
+	ID      string `json:"id"`
+	Email   string `json:"email"`
+	Name    string `json:"name"`
+	Picture string `json:"picture"`
 }
 
 // ServiceData represents data for the services page
@@ -97,4 +97,3 @@ type ServiceInfo struct {
 	AuthURL       string `json:"auth_url,omitempty"`
 	LastUsed      string `json:"last_used,omitempty"`
 }
-

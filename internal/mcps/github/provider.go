@@ -41,7 +41,7 @@ func (g *GitHubProvider) GetOAuthConfig(service string) (*oauth2.Config, error) 
 	if len(scopes) == 0 {
 		return nil, fmt.Errorf("unsupported service: %s", service)
 	}
-	
+
 	return &oauth2.Config{
 		ClientID:     g.clientID,
 		ClientSecret: g.clientSecret,
@@ -60,14 +60,14 @@ func (g *GitHubProvider) GetAuthURL(service, state string) (string, error) {
 	if len(scopes) == 0 {
 		return "", fmt.Errorf("unsupported service: %s", service)
 	}
-	
+
 	params := url.Values{}
 	params.Add("client_id", g.clientID)
 	params.Add("redirect_uri", g.redirectURI)
 	params.Add("scope", strings.Join(scopes, " "))
 	params.Add("response_type", "code")
 	params.Add("state", state) // Use state to track service and other info
-	
+
 	return "https://github.com/login/oauth/authorize?" + params.Encode(), nil
 }
 
@@ -77,12 +77,12 @@ func (g *GitHubProvider) ExchangeCodeForToken(ctx context.Context, service, code
 	if err != nil {
 		return nil, err
 	}
-	
+
 	token, err := oauthConfig.Exchange(ctx, code)
 	if err != nil {
 		return nil, fmt.Errorf("failed to exchange code for token: %w", err)
 	}
-	
+
 	return token, nil
 }
 
@@ -91,7 +91,7 @@ func (g *GitHubProvider) ValidateToken(ctx context.Context, service string, toke
 	if !token.Valid() {
 		return fmt.Errorf("token is expired")
 	}
-	
+
 	// TODO: Make a test API call to GitHub to verify token is actually valid
 	// For now, GitHub tokens don't have expiration by default
 	return nil
@@ -109,18 +109,18 @@ func (g *GitHubProvider) getScopesForService(service string) []string {
 	switch service {
 	case "repos":
 		return []string{
-			"repo", // Full control of private repositories
+			"repo",      // Full control of private repositories
 			"read:user", // Read user profile data
 		}
 	case "issues":
 		return []string{
-			"repo", // Access to repository issues
+			"repo",      // Access to repository issues
 			"read:user", // Read user profile data
 		}
 	case "actions":
 		return []string{
-			"repo", // Access to repository actions
-			"workflow", // Write access to GitHub Actions workflows
+			"repo",      // Access to repository actions
+			"workflow",  // Write access to GitHub Actions workflows
 			"read:user", // Read user profile data
 		}
 	default:

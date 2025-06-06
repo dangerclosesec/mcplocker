@@ -35,7 +35,7 @@ type ServiceConnection struct {
 // WebHandlers contains all web route handlers
 type WebHandlers struct {
 	oauth         *OAuthConfig
-	sessions      map[string]*User               // Simple in-memory session store - use Redis in production
+	sessions      map[string]*User              // Simple in-memory session store - use Redis in production
 	serviceTokens map[string]*ServiceConnection // Service-specific connections keyed by "userID:service"
 	tokenManager  *TokenManager                 // API token manager
 }
@@ -89,12 +89,12 @@ func NewWebHandlers() *WebHandlers {
 		serviceTokens: make(map[string]*ServiceConnection),
 		tokenManager:  tokenManager,
 	}
-	
+
 	// Load existing service tokens from persistent storage
 	if err := handlers.LoadServiceTokens(); err != nil {
 		log.Printf("Warning: Failed to load service tokens: %v", err)
 	}
-	
+
 	return handlers
 }
 
@@ -132,7 +132,7 @@ func (h *WebHandlers) isServiceConnected(userID, service string) bool {
 	if !exists {
 		return false
 	}
-	
+
 	// Check if token is still valid (not expired)
 	return connection.Token != nil && connection.Token.Valid()
 }
@@ -144,7 +144,7 @@ func (h *WebHandlers) getServiceEmail(userID, service string) string {
 	if !exists {
 		return ""
 	}
-	
+
 	return connection.UserEmail
 }
 
@@ -210,7 +210,7 @@ func (h *WebHandlers) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		delete(h.sessions, cookie.Value)
 	}
-	
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session",
 		Value:    "",
@@ -219,18 +219,18 @@ func (h *WebHandlers) HandleLogout(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		Secure:   false, // Set to true in production with HTTPS
 	})
-	
+
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
 // HandleDashboard serves the main dashboard
 func (h *WebHandlers) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 	user := h.getUser(r)
-	
+
 	// Calculate actual service counts
 	connectedServices := 0
 	activeTokens := 0
-	
+
 	if user != nil {
 		// Count connected services
 		services := []string{"gmail", "calendar", "drive"}
@@ -239,12 +239,12 @@ func (h *WebHandlers) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 				connectedServices++
 			}
 		}
-		
+
 		// For now, activeTokens is same as connectedServices
 		// In the future, this could include CLI tokens, etc.
 		activeTokens = connectedServices
 	}
-	
+
 	data := struct {
 		PageData
 		ConnectedServices int
@@ -257,14 +257,14 @@ func (h *WebHandlers) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 		ConnectedServices: connectedServices,
 		ActiveTokens:      activeTokens,
 	}
-	
+
 	RenderTemplate(w, "dashboard.html", data)
 }
 
 // HandleServices serves the services management page
 func (h *WebHandlers) HandleServices(w http.ResponseWriter, r *http.Request) {
 	user := h.getUser(r)
-	
+
 	// Create services data structure for template
 	servicesData := struct {
 		Gmail struct {
@@ -289,31 +289,31 @@ func (h *WebHandlers) HandleServices(w http.ResponseWriter, r *http.Request) {
 		}
 		ErrorMessage string
 	}{}
-	
+
 	// Check for error message from OAuth callback
 	if errorMsg := r.URL.Query().Get("error"); errorMsg != "" {
 		servicesData.ErrorMessage = errorMsg
 	}
-	
+
 	// Check actual service connection status from stored tokens
 	if user != nil {
 		servicesData.Gmail.Connected = h.isServiceConnected(user.ID, "gmail")
 		servicesData.Gmail.Email = h.getServiceEmail(user.ID, "gmail")
-		
+
 		servicesData.Calendar.Connected = h.isServiceConnected(user.ID, "calendar")
 		servicesData.Calendar.Email = h.getServiceEmail(user.ID, "calendar")
-		
+
 		servicesData.Drive.Connected = h.isServiceConnected(user.ID, "drive")
 		servicesData.Drive.Email = h.getServiceEmail(user.ID, "drive")
-		
+
 		// Check GitHub services using the new key format
 		servicesData.GitHubRepos.Connected = h.isServiceConnected(user.ID, "github:repos")
 		servicesData.GitHubRepos.Username = h.getServiceEmail(user.ID, "github:repos")
-		
+
 		servicesData.GitHubIssues.Connected = h.isServiceConnected(user.ID, "github:issues")
 		servicesData.GitHubIssues.Username = h.getServiceEmail(user.ID, "github:issues")
 	}
-	
+
 	data := struct {
 		PageData
 		Services struct {
@@ -374,20 +374,20 @@ func (h *WebHandlers) HandleServices(w http.ResponseWriter, r *http.Request) {
 		},
 		ErrorMessage: servicesData.ErrorMessage,
 	}
-	
+
 	RenderTemplate(w, "services.html", data)
 }
 
 // HandleTokens serves the API tokens management page
 func (h *WebHandlers) HandleTokens(w http.ResponseWriter, r *http.Request) {
 	user := h.getUser(r)
-	
+
 	// Get user's tokens
 	var tokens []*APIToken
 	if h.tokenManager != nil && user != nil {
 		tokens = h.tokenManager.GetUserTokens(user.ID)
 	}
-	
+
 	data := struct {
 		PageData
 		Tokens []*APIToken
@@ -398,7 +398,7 @@ func (h *WebHandlers) HandleTokens(w http.ResponseWriter, r *http.Request) {
 		},
 		Tokens: tokens,
 	}
-	
+
 	RenderTemplate(w, "tokens.html", data)
 }
 
@@ -411,7 +411,7 @@ func (h *WebHandlers) HandleGoogleAuth(w http.ResponseWriter, r *http.Request) {
 
 	state := generateSessionToken()
 	url := h.oauth.Google.AuthCodeURL(state, oauth2.AccessTypeOffline)
-	
+
 	// Store state for validation (use proper session store in production)
 	http.SetCookie(w, &http.Cookie{
 		Name:     "oauth_state",
@@ -421,7 +421,7 @@ func (h *WebHandlers) HandleGoogleAuth(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		Secure:   false, // Set to true in production with HTTPS
 	})
-	
+
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
@@ -436,16 +436,16 @@ func (h *WebHandlers) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 	if errorParam := r.URL.Query().Get("error"); errorParam != "" {
 		errorDescription := r.URL.Query().Get("error_description")
 		urlState := r.URL.Query().Get("state")
-		
+
 		// Extract service from state if present (format: "service:token" or just "token")
 		var service string
 		if strings.Contains(urlState, ":") {
 			parts := strings.SplitN(urlState, ":", 2)
 			service = parts[0]
 		}
-		
+
 		log.Printf("OAuth error for service %s: %s - %s", service, errorParam, errorDescription)
-		
+
 		// Clear state cookie
 		http.SetCookie(w, &http.Cookie{
 			Name:     "oauth_state",
@@ -454,7 +454,7 @@ func (h *WebHandlers) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 			MaxAge:   -1,
 			HttpOnly: true,
 		})
-		
+
 		// Handle different error types
 		var message string
 		switch errorParam {
@@ -473,7 +473,7 @@ func (h *WebHandlers) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 				message = "Authorization failed. Please try again."
 			}
 		}
-		
+
 		// Redirect with error message
 		if service != "" {
 			// For service-specific auth, redirect to services page with error
@@ -499,7 +499,7 @@ func (h *WebHandlers) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 		parts := strings.SplitN(urlState, ":", 2)
 		service = parts[0]
 	}
-	
+
 	// Clear state cookie
 	http.SetCookie(w, &http.Cookie{
 		Name:     "oauth_state",
@@ -508,7 +508,7 @@ func (h *WebHandlers) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 		MaxAge:   -1,
 		HttpOnly: true,
 	})
-	
+
 	// Exchange authorization code for token
 	code := r.URL.Query().Get("code")
 	token, err := h.oauth.Google.Exchange(context.Background(), code)
@@ -526,7 +526,7 @@ func (h *WebHandlers) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 			http.Error(w, "User not authenticated", http.StatusUnauthorized)
 			return
 		}
-		
+
 		// Get Google user info to extract email for this service connection
 		client := h.oauth.Google.Client(context.Background(), token)
 		resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
@@ -534,7 +534,7 @@ func (h *WebHandlers) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 			log.Printf("Failed to get user info for service %s: %v", service, err)
 			// Still store the connection without email
 		}
-		
+
 		var googleEmail string
 		if resp != nil {
 			defer resp.Body.Close()
@@ -545,7 +545,7 @@ func (h *WebHandlers) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 				googleEmail = userInfo.Email
 			}
 		}
-		
+
 		// Store service connection
 		tokenKey := user.ID + ":" + service
 		h.serviceTokens[tokenKey] = &ServiceConnection{
@@ -553,22 +553,22 @@ func (h *WebHandlers) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 			UserEmail: googleEmail,
 			UserID:    user.ID,
 		}
-		
+
 		// Save tokens to persistent storage
 		if err := h.SaveServiceTokens(); err != nil {
 			log.Printf("Warning: Failed to save service tokens: %v", err)
 		}
-		
+
 		// Notify about tool changes
 		if GlobalToolChangeNotifier != nil {
 			GlobalToolChangeNotifier.NotifyToolChange(user.ID)
 		}
-		
+
 		log.Printf("Stored %s token for user %s (Google account: %s)", service, user.Email, googleEmail)
 		http.Redirect(w, r, "/services", http.StatusSeeOther)
 		return
 	}
-	
+
 	// For general auth flow, continue with user info retrieval
 	client := h.oauth.Google.Client(context.Background(), token)
 	resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
@@ -578,20 +578,20 @@ func (h *WebHandlers) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	defer resp.Body.Close()
-	
+
 	var userInfo struct {
 		ID      string `json:"id"`
 		Email   string `json:"email"`
 		Name    string `json:"name"`
 		Picture string `json:"picture"`
 	}
-	
+
 	if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
 		http.Error(w, "Failed to decode user info", http.StatusInternalServerError)
 		log.Printf("User info decode error: %v", err)
 		return
 	}
-	
+
 	// Create user session
 	user := &User{
 		ID:      userInfo.ID,
@@ -599,10 +599,10 @@ func (h *WebHandlers) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 		Name:    userInfo.Name,
 		Picture: userInfo.Picture,
 	}
-	
+
 	sessionToken := generateSessionToken()
 	h.sessions[sessionToken] = user
-	
+
 	// Set session cookie
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session",
@@ -612,7 +612,7 @@ func (h *WebHandlers) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 		HttpOnly: true,
 		Secure:   false, // Set to true in production with HTTPS
 	})
-	
+
 	// Check for return_to parameter in the original request
 	// This might be stored in a session or passed through state parameter
 	// For now, let's check if there's a return_to cookie or state parameter
@@ -700,7 +700,7 @@ func (h *WebHandlers) HandleServiceAuth(service string) http.HandlerFunc {
 		// Generate state token that includes the service name
 		state := service + ":" + generateSessionToken()
 		url := serviceOAuthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
-		
+
 		// Store state for validation
 		http.SetCookie(w, &http.Cookie{
 			Name:     "oauth_state",
@@ -710,7 +710,7 @@ func (h *WebHandlers) HandleServiceAuth(service string) http.HandlerFunc {
 			HttpOnly: true,
 			Secure:   false, // Set to true in production with HTTPS
 		})
-		
+
 		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 	}
 }
@@ -721,21 +721,21 @@ func (h *WebHandlers) RegisterRoutes(r chi.Router) {
 	r.Get("/", h.HandleHome)
 	r.Get("/login", h.HandleLogin)
 	r.Get("/logout", h.HandleLogout)
-	
+
 	// OAuth routes
 	r.Get("/auth/google", h.HandleGoogleAuth)
 	r.Get("/api/auth/callback/google", h.HandleGoogleCallback)
-	
+
 	// Service-specific OAuth routes
 	r.Get("/auth/service/gmail", h.HandleServiceAuth("gmail"))
 	r.Get("/auth/service/calendar", h.HandleServiceAuth("calendar"))
 	r.Get("/auth/service/drive", h.HandleServiceAuth("drive"))
-	
+
 	// GitHub OAuth routes
 	r.Get("/auth/service/github/repos", h.HandleGitHubServiceAuth("repos"))
 	r.Get("/auth/service/github/issues", h.HandleGitHubServiceAuth("issues"))
 	r.Get("/api/auth/callback/github", h.HandleGitHubCallback)
-	
+
 	// Protected routes
 	r.Group(func(r chi.Router) {
 		r.Get("/dashboard", h.requireAuth(h.HandleDashboard))
@@ -757,7 +757,7 @@ func (h *WebHandlers) HandleGitHubServiceAuth(service string) http.HandlerFunc {
 		// Check if GitHub OAuth is configured via environment variables
 		clientID := os.Getenv("GITHUB_CLIENT_ID")
 		clientSecret := os.Getenv("GITHUB_CLIENT_SECRET")
-		
+
 		if clientID == "" || clientSecret == "" {
 			http.Error(w, "GitHub OAuth not configured. Please set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET environment variables.", http.StatusInternalServerError)
 			return
@@ -768,13 +768,13 @@ func (h *WebHandlers) HandleGitHubServiceAuth(service string) http.HandlerFunc {
 		switch service {
 		case "repos":
 			scopes = []string{
-				"repo",       // Full control of private repositories
-				"read:user",  // Read user profile data
+				"repo",      // Full control of private repositories
+				"read:user", // Read user profile data
 			}
 		case "issues":
 			scopes = []string{
-				"repo",       // Access to repository issues
-				"read:user",  // Read user profile data
+				"repo",      // Access to repository issues
+				"read:user", // Read user profile data
 			}
 		default:
 			http.Error(w, "Unsupported GitHub service", http.StatusBadRequest)
@@ -796,7 +796,7 @@ func (h *WebHandlers) HandleGitHubServiceAuth(service string) http.HandlerFunc {
 		// Generate state token that includes the service name
 		state := "github:" + service + ":" + generateSessionToken()
 		url := githubOAuthConfig.AuthCodeURL(state)
-		
+
 		// Store state for validation
 		http.SetCookie(w, &http.Cookie{
 			Name:     "oauth_state",
@@ -806,7 +806,7 @@ func (h *WebHandlers) HandleGitHubServiceAuth(service string) http.HandlerFunc {
 			HttpOnly: true,
 			Secure:   false, // Set to true in production with HTTPS
 		})
-		
+
 		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 	}
 }
@@ -817,7 +817,7 @@ func (h *WebHandlers) HandleGitHubCallback(w http.ResponseWriter, r *http.Reques
 	if errorParam := r.URL.Query().Get("error"); errorParam != "" {
 		errorDescription := r.URL.Query().Get("error_description")
 		urlState := r.URL.Query().Get("state")
-		
+
 		// Extract service from state if present (format: "github:service:token")
 		var service string
 		if strings.HasPrefix(urlState, "github:") {
@@ -826,9 +826,9 @@ func (h *WebHandlers) HandleGitHubCallback(w http.ResponseWriter, r *http.Reques
 				service = parts[1]
 			}
 		}
-		
+
 		log.Printf("GitHub OAuth error for service %s: %s - %s", service, errorParam, errorDescription)
-		
+
 		// Clear state cookie
 		http.SetCookie(w, &http.Cookie{
 			Name:     "oauth_state",
@@ -837,7 +837,7 @@ func (h *WebHandlers) HandleGitHubCallback(w http.ResponseWriter, r *http.Reques
 			MaxAge:   -1,
 			HttpOnly: true,
 		})
-		
+
 		// Handle different error types
 		var message string
 		switch errorParam {
@@ -856,7 +856,7 @@ func (h *WebHandlers) HandleGitHubCallback(w http.ResponseWriter, r *http.Reques
 				message = "GitHub authorization failed. Please try again."
 			}
 		}
-		
+
 		// Redirect with error message
 		http.Redirect(w, r, "/services?error="+url.QueryEscape(message), http.StatusSeeOther)
 		return
@@ -878,12 +878,12 @@ func (h *WebHandlers) HandleGitHubCallback(w http.ResponseWriter, r *http.Reques
 			service = parts[1]
 		}
 	}
-	
+
 	if service == "" {
 		http.Error(w, "Invalid state format", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Clear state cookie
 	http.SetCookie(w, &http.Cookie{
 		Name:     "oauth_state",
@@ -899,11 +899,11 @@ func (h *WebHandlers) HandleGitHubCallback(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "User not authenticated", http.StatusUnauthorized)
 		return
 	}
-	
+
 	// Check if GitHub OAuth is configured
 	clientID := os.Getenv("GITHUB_CLIENT_ID")
 	clientSecret := os.Getenv("GITHUB_CLIENT_SECRET")
-	
+
 	if clientID == "" || clientSecret == "" {
 		http.Error(w, "GitHub OAuth not configured", http.StatusInternalServerError)
 		return
@@ -919,7 +919,7 @@ func (h *WebHandlers) HandleGitHubCallback(w http.ResponseWriter, r *http.Reques
 			TokenURL: "https://github.com/login/oauth/access_token",
 		},
 	}
-	
+
 	// Exchange authorization code for token
 	code := r.URL.Query().Get("code")
 	token, err := githubOAuthConfig.Exchange(context.Background(), code)
@@ -936,7 +936,7 @@ func (h *WebHandlers) HandleGitHubCallback(w http.ResponseWriter, r *http.Reques
 		log.Printf("Failed to get GitHub user info for service %s: %v", service, err)
 		// Still store the connection without username
 	}
-	
+
 	var githubUsername string
 	if resp != nil {
 		defer resp.Body.Close()
@@ -947,7 +947,7 @@ func (h *WebHandlers) HandleGitHubCallback(w http.ResponseWriter, r *http.Reques
 			githubUsername = userInfo.Login
 		}
 	}
-	
+
 	// Store service connection with new key format
 	tokenKey := user.ID + ":github:" + service
 	h.serviceTokens[tokenKey] = &ServiceConnection{
@@ -955,17 +955,17 @@ func (h *WebHandlers) HandleGitHubCallback(w http.ResponseWriter, r *http.Reques
 		UserEmail: githubUsername, // Using UserEmail field to store GitHub username
 		UserID:    user.ID,
 	}
-	
+
 	// Save tokens to persistent storage
 	if err := h.SaveServiceTokens(); err != nil {
 		log.Printf("Warning: Failed to save service tokens: %v", err)
 	}
-	
+
 	// Notify about tool changes
 	if GlobalToolChangeNotifier != nil {
 		GlobalToolChangeNotifier.NotifyToolChange(user.ID)
 	}
-	
+
 	log.Printf("Stored GitHub %s token for user %s (GitHub account: %s)", service, user.Email, githubUsername)
 	http.Redirect(w, r, "/services", http.StatusSeeOther)
 }
@@ -1056,6 +1056,6 @@ func (h *WebHandlers) ValidateAPIToken(token string) (*APIToken, error) {
 	if h.tokenManager == nil {
 		return nil, fmt.Errorf("token management not available")
 	}
-	
+
 	return h.tokenManager.ValidateToken(token)
 }

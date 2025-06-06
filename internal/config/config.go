@@ -9,19 +9,19 @@ import (
 
 // Config represents the mcplocker configuration
 type Config struct {
-	AuthServerURL string     `json:"auth_server_url"`
-	Token         string     `json:"token"`
+	AuthServerURL string       `json:"auth_server_url"`
+	Token         string       `json:"token"`
 	Tools         []ToolConfig `json:"tools"`
 }
 
 // ToolConfig represents a configured MCP tool
 type ToolConfig struct {
-	Name        string            `json:"name"`
-	Provider    string            `json:"provider"`    // e.g., "google", "slack"
-	Service     string            `json:"service"`     // e.g., "calendar", "gmail", "channels"
-	Enabled     bool              `json:"enabled"`
-	Authenticated bool            `json:"authenticated"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
+	Name          string            `json:"name"`
+	Provider      string            `json:"provider"` // e.g., "google", "slack"
+	Service       string            `json:"service"`  // e.g., "calendar", "gmail", "channels"
+	Enabled       bool              `json:"enabled"`
+	Authenticated bool              `json:"authenticated"`
+	Metadata      map[string]string `json:"metadata,omitempty"`
 }
 
 // DefaultConfig returns a default configuration
@@ -39,10 +39,10 @@ func GetConfigPath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to get user home directory: %w", err)
 	}
-	
+
 	configDir := filepath.Join(homeDir, ".config", "mcplocker")
 	configFile := filepath.Join(configDir, "mcp.json")
-	
+
 	return configFile, nil
 }
 
@@ -52,7 +52,7 @@ func EnsureConfigDir() error {
 	if err != nil {
 		return err
 	}
-	
+
 	configDir := filepath.Dir(configPath)
 	return os.MkdirAll(configDir, 0755)
 }
@@ -63,22 +63,22 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// If config file doesn't exist, return default config
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		return DefaultConfig(), nil
 	}
-	
+
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
-	
+
 	var config Config
 	if err := json.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
-	
+
 	return &config, nil
 }
 
@@ -87,21 +87,21 @@ func (c *Config) Save() error {
 	if err := EnsureConfigDir(); err != nil {
 		return err
 	}
-	
+
 	configPath, err := GetConfigPath()
 	if err != nil {
 		return err
 	}
-	
+
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
-	
+
 	if err := os.WriteFile(configPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
-	
+
 	return nil
 }
 
